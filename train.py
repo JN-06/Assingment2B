@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import joblib
+import random
+import tensorflow as tf
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
@@ -9,6 +11,12 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, GRU, Dense
 
+# =========================
+# FIX RANDOM SEED
+# =========================
+np.random.seed(42)
+random.seed(42)
+tf.random.set_seed(42)
 
 # =========================
 # LOAD DATA
@@ -83,13 +91,15 @@ def train_rf(X_train, y_train):
 def evaluate_model(name, y_true, y_pred):
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mae = mean_absolute_error(y_true, y_pred)
+    nrmse = rmse / (y_true.max() - y_true.min())
 
     print(f"\n{name}")
     print("-" * 30)
-    print("RMSE:", round(rmse, 5))
-    print("MAE :", round(mae, 5))
+    print("RMSE :", round(rmse, 5))
+    print("MAE  :", round(mae, 5))
+    print("NRMSE:", round(nrmse, 5))
 
-    return rmse, mae
+    return rmse, mae, nrmse
 
 
 # =========================
@@ -146,9 +156,9 @@ def main():
     print("MODEL COMPARISON RESULTS")
     print("==============================")
 
-    lstm_rmse, lstm_mae = evaluate_model("LSTM", y_test_seq, lstm_pred)
-    gru_rmse, gru_mae = evaluate_model("GRU", y_test_seq, gru_pred)
-    rf_rmse, rf_mae = evaluate_model("Random Forest", y_test_seq, rf_pred)
+    lstm_rmse, lstm_mae, lstm_nrmse = evaluate_model("LSTM", y_test_seq, lstm_pred)
+    gru_rmse, gru_mae,  gru_nrmse = evaluate_model("GRU", y_test_seq, gru_pred)
+    rf_rmse, rf_mae, rf_nrmse = evaluate_model("Random Forest", y_test_seq, rf_pred)
 
     # =========================
     # SUMMARY TABLE (IMPORTANT FOR REPORT)
@@ -157,11 +167,12 @@ def main():
     print("FINAL COMPARISON TABLE")
     print("==============================")
 
-    print(f"{'Model':<15}{'RMSE':<15}{'MAE'}")
-    print("-" * 40)
-    print(f"LSTM{'':<11}{lstm_rmse:<15.5f}{lstm_mae:.5f}")
-    print(f"GRU{'':<12}{gru_rmse:<15.5f}{gru_mae:.5f}")
-    print(f"RF{'':<13}{rf_rmse:<15.5f}{rf_mae:.5f}")
+    print(f"{'Model':<15}{'RMSE':<15}{'MAE':<15}{'NRMSE':<15}")
+    print("-" * 60)
+
+    print(f"LSTM{'':<11}{lstm_rmse:<15.5f}{lstm_mae:<15.5f}{lstm_nrmse:<15.5f}")
+    print(f"GRU{'':<12}{gru_rmse:<15.5f}{gru_mae:<15.5f}{gru_nrmse:<15.5f}")
+    print(f"RF{'':<13}{rf_rmse:<15.5f}{rf_mae:<15.5f}{rf_nrmse:<15.5f}")
 
     print("\nALL MODELS SAVED SUCCESSFULLY")
 

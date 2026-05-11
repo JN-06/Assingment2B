@@ -20,10 +20,9 @@ def extract_flow(df):
     df["SCATS Number"] = pd.to_numeric(df["SCATS Number"], errors="coerce")
     df = df[df["SCATS Number"].isin(SELECTED_NODES)]
 
-    v39 = pd.to_numeric(df.iloc[:, 39], errors="coerce")
-    v40 = pd.to_numeric(df.iloc[:, 40], errors="coerce")
+    flow_data = df.iloc[:, 36:40].apply(pd.to_numeric, errors="coerce")
+    df["flow"] = flow_data.sum(axis=1)
 
-    df["flow"] = v39 + v40
     return df
 
 
@@ -47,3 +46,8 @@ def create_train_test(df, ratio=0.8):
 
     print("Train/Test saved")
     return train, test
+
+
+if __name__ == "__main__":
+    df = load_data("Scats Data October 2006.xls")
+    create_train_test(df)
