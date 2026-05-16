@@ -10,8 +10,8 @@ from graph import build_graph
 def load_models():
     lstm = load_model("model/lstm.h5", compile=False)
     gru = load_model("model/gru.h5", compile=False)
-    rf = joblib.load("model/rf.pkl")
-    return lstm, gru, rf
+    dt = joblib.load("model/decision_tree.pkl")
+    return lstm, gru, dt
 
 
 # =========================
@@ -22,7 +22,7 @@ def predict_rnn(model, data):
     return float(model.predict(x, verbose=0)[0][0])
 
 
-def predict_rf(model, data):
+def predict_tree(model, data):
     return float(model.predict(np.array(data).reshape(1, -1))[0])
 
 
@@ -36,8 +36,8 @@ def build_dynamic_graph(model, model_type):
 
     for u, v in G.edges():
 
-        if model_type == "RF":
-            cost = predict_rf(model, history)
+        if model_type == "DT":
+            cost = predict_tree(model, history)
         else:
             cost = predict_rnn(model, history)
 

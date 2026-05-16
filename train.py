@@ -4,7 +4,7 @@ import joblib
 import random
 import tensorflow as tf
 
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -70,20 +70,20 @@ def build_gru(input_shape):
     return model
 
 
-def train_rf(X_train, y_train):
-    rf = RandomForestRegressor(
-        n_estimators=150,
+def train_dt(X_train, y_train):
+    dt = DecisionTreeRegressor(
+        max_depth=8,
+        min_samples_leaf=2,
         random_state=42
     )
 
-    rf.fit(
+    dt.fit(
         X_train.reshape(X_train.shape[0], -1),
         y_train
     )
 
-    joblib.dump(rf, "model/rf.pkl")
-    return rf
-
+    joblib.dump(dt, "model/decision_tree.pkl")
+    return dt
 
 # =========================
 # METRICS
@@ -136,10 +136,10 @@ def main():
     gru.save("model/gru.h5")
 
     # =========================
-    # RANDOM FOREST
+    # DECISION TREE
     # =========================
-    print("\nTraining Random Forest...")
-    rf = train_rf(X_train, y_train_seq)
+    print("\nTraining DT...")
+    dt = train_dt(X_train, y_train_seq)
 
     # =========================
     # PREDICTIONS
@@ -147,7 +147,7 @@ def main():
     lstm_pred = lstm.predict(X_test_rnn, verbose=0)
     gru_pred = gru.predict(X_test_rnn, verbose=0)
 
-    rf_pred = rf.predict(X_test.reshape(X_test.shape[0], -1))
+    dt_pred = dt.predict(X_test.reshape(X_test.shape[0], -1))
 
     # =========================
     # EVALUATION
@@ -158,7 +158,7 @@ def main():
 
     lstm_rmse, lstm_mae, lstm_nrmse = evaluate_model("LSTM", y_test_seq, lstm_pred)
     gru_rmse, gru_mae,  gru_nrmse = evaluate_model("GRU", y_test_seq, gru_pred)
-    rf_rmse, rf_mae, rf_nrmse = evaluate_model("Random Forest", y_test_seq, rf_pred)
+    dt_rmse, dt_mae, dt_nrmse = evaluate_model("DT", y_test_seq, dt_pred)
 
     # =========================
     # SUMMARY TABLE (IMPORTANT FOR REPORT)
@@ -172,7 +172,7 @@ def main():
 
     print(f"LSTM{'':<11}{lstm_rmse:<15.5f}{lstm_mae:<15.5f}{lstm_nrmse:<15.5f}")
     print(f"GRU{'':<12}{gru_rmse:<15.5f}{gru_mae:<15.5f}{gru_nrmse:<15.5f}")
-    print(f"RF{'':<13}{rf_rmse:<15.5f}{rf_mae:<15.5f}{rf_nrmse:<15.5f}")
+    print(f"DT{'':<13}{dt_rmse:<15.5f}{dt_mae:<15.5f}{dt_nrmse:<15.5f}")
 
     print("\nALL MODELS SAVED SUCCESSFULLY")
 

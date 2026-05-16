@@ -64,11 +64,11 @@ def run_system(name, model, model_type, start, goal):
 def main():
     print("\n====================================")
     print(" A2B TRAFFIC ROUTE SYSTEM")
-    print(" LSTM vs GRU vs RF (IDA*)")
+    print(" LSTM vs GRU vs Decision Tree (IDA*)")
     print("====================================\n")
 
     print("Loading models...")
-    lstm, gru, rf = load_models()
+    lstm, gru, dt = load_models()
     print("✔ Models loaded")
 
     # =========================
@@ -87,7 +87,7 @@ def main():
     # =========================
     lstm_path, lstm_cost, _ = run_system("LSTM + IDA*", lstm, "LSTM", start, goal)
     gru_path, gru_cost, _ = run_system("GRU + IDA*", gru, "GRU", start, goal)
-    rf_path, rf_cost, _ = run_system("RF + IDA*", rf, "RF", start, goal)
+    dt_path, dt_cost, _ = run_system("DT + IDA*", dt, "DT", start, goal)
 
     # =========================
     # FINAL COMPARISON
@@ -99,7 +99,7 @@ def main():
     results = [
         ("LSTM", lstm_cost),
         ("GRU", gru_cost),
-        ("RF", rf_cost)
+        ("DT", dt_cost)
     ]
 
     results = [r for r in results if r[1] is not None]
