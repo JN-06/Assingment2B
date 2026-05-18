@@ -25,8 +25,8 @@ def load_dataset():
     train = pd.read_csv("data/train.csv")
     test = pd.read_csv("data/test.csv")
 
-    y_train = train["flow"].values
-    y_test = test["flow"].values
+    y_train = train["flow_9to10"].values
+    y_test = test["flow_9to10"].values
 
     scaler = MinMaxScaler()
 
