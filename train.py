@@ -165,7 +165,7 @@ def main():
     results.append(["DT", dt_rmse, dt_mae, dt_nrmse])
 
     # =========================
-    # SAVE FINAL COMPARISON CSV ⭐
+    # SAVE FINAL COMPARISON CSV
     # =========================
     results_df = pd.DataFrame(results, columns=["model", "rmse", "mae", "nrmse"])
     results_df.to_csv("model/results.csv", index=False)
