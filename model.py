@@ -5,6 +5,10 @@ from tensorflow.keras.models import load_model
 from graph import build_graph
 import math
 
+# =========================
+# NODES LIST
+# =========================
+NODES_LIST = [3120, 3122, 3126, 3180, 4030, 4032, 4034, 4035, 4040, 4043]
 
 # =========================
 # LOAD MODELS
@@ -86,12 +90,9 @@ def flow_to_speed(flow):
 # PREDICTION HELPERS
 # =========================
 def predict_rnn(model, data):
-
-    x = np.array(data).reshape(1, len(data), 1)
-
-    prediction = model.predict(x, verbose=0)
-
-    return float(prediction[0][0])
+    # data is now the full feature vector (past_flow + meta), not just past flow
+    x = np.array(data).reshape(1, 1, len(data))
+    return float(model.predict(x, verbose=0)[0][0])
 
 
 def predict_tree(model, data):
@@ -107,67 +108,32 @@ def predict_tree(model, data):
 # BUILD DYNAMIC GRAPH
 # =========================
 def build_dynamic_graph(model, model_type):
-
     G = build_graph()
-
-    # REAL histories
     traffic_data = load_traffic_histories()
 
+    # Meta features: hour=9, day_of_week=1 (Tuesday as placeholder), day=1, month=10
+    # Ideally pass real date from GUI — for now use fixed October weekday
+    meta_features = [9, 1, 1, 10]  # hour, day_of_week, day, month
+    # + one-hot location (10 SCATS nodes) — all zeros except current node
+    num_locations = len(NODES_LIST)  # import or define this
+
     for u, v in G.edges():
-
-        # get destination node history
         history = traffic_data.get(v)
-
-        # fallback safety
         if history is None:
             history = [100] * 12
 
-        # =========================
-        # MODEL PREDICTION
-        # =========================
+        # Build location one-hot for node v
+        loc_onehot = [1 if n == v else 0 for n in NODES_LIST]
+        combined = history + meta_features + loc_onehot
+
         if model_type == "DT":
-            predicted_flow = predict_tree(model, history)
+            predicted_flow = predict_tree(model, combined)
         else:
-            predicted_flow = predict_rnn(model, history)
+            predicted_flow = predict_rnn(model, combined)
 
-
-        # =========================
-        # SAFETY CLAMP (ADD THIS)
-        # =========================
-        predicted_flow = max(0, predicted_flow)
-        predicted_flow = min(predicted_flow, 2000)
-        
-        # =========================
-        # SCALE BACK FLOW
-        # (because train.py used MinMaxScaler)
-        # =========================
-        predicted_flow = predicted_flow * 1000
-
-        # safety check
-        predicted_flow = max(predicted_flow, 1)
-
-        # =========================
-        # FLOW → SPEED
-        # =========================
+        predicted_flow = max(1, min(predicted_flow * 1000, 2000))
         speed = flow_to_speed(predicted_flow)
-
-        # =========================
-        # TRAVEL TIME ESTIMATION
-        # =========================
-
-        # simplified distance assumption
-        distance = 1.0  # km
-
-        # time = distance / speed
-        # convert hours → minutes
-        travel_time = (distance / speed) * 60
-
-        # add 30-second intersection delay
-        travel_time += 0.5
-
-        # =========================
-        # STORE EDGE WEIGHT
-        # =========================
+        travel_time = (1.0 / speed) * 60 + 0.5
         G[u][v]["weight"] = round(travel_time, 4)
 
     return G

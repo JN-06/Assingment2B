@@ -58,7 +58,7 @@ def extract_flow(df):
     df = df.copy()
 
     # =========================
-    # STEP 1: Filter SCATS + exact location (IMPORTANT FIX)
+    # STEP 1: Filter SCATS + exact location 
     # =========================
     df = df[
         df.apply(
