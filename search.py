@@ -1,59 +1,91 @@
 import math
 
-def heuristic(a, b):
-    return 0
+# =========================
+# HEURISTIC (Euclidean)
+# =========================
+def heuristic(a, b, coords):
+    x1, y1 = coords[a]
+    x2, y2 = coords[b]
+    return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
-def dfs(path, g, threshold, goal, G):
-    node = path[-1]
-    f = g + heuristic(node, goal)
-
-    if f > threshold:
-        return f
-
-    if node == goal:
-        return -1
-
-    min_cost = math.inf
-
-    for neighbor in G[node]:
-        if neighbor in path:
-            continue
-
-        cost = G[node][neighbor]["weight"]
-        path.append(neighbor)
-
-        t = dfs(path, g + cost, threshold, goal, G)
-
-        if t == -1:
-            return -1
-
-        if t < min_cost:
-            min_cost = t
-
-        path.pop()
-
-    return min_cost
+def min_heuristic(node, goals, coords):
+    return min(heuristic(node, g, coords) for g in goals)
 
 
-def ida_star(G, start, goal):
-    # simple DFS fallback (safe for assignment demo)
+# =========================
+# PATH RECONSTRUCTION
+# =========================
+def reconstruct_path(parent, start, goal):
+    path = []
+    cur = goal
 
-    stack = [(start, [start])]
-    visited = set()
+    while cur is not None:
+        path.append(cur)
+        cur = parent.get(cur)
 
-    while stack:
-        node, path = stack.pop()
+    return list(reversed(path))
 
-        if node == goal:
-            return path
 
-        if node in visited:
-            continue
+# =========================
+# IDA*
+# =========================
+def ida_star(graph, coords, start, goals):
 
-        visited.add(node)
+    def search(node, g, threshold, parent, visited):
+        h = min_heuristic(node, goals, coords)
+        f = g + h
 
-        for neighbor in G[node]:
-            stack.append((neighbor, path + [neighbor]))
+        if f > threshold:
+            return f
 
-    return None
+        if node in goals:
+            return reconstruct_path(parent, start, node)
+
+        min_threshold = float("inf")
+
+        for neighbor in graph[node]:
+
+            if neighbor in visited:
+                continue
+
+            edge = graph.get_edge_data(node, neighbor, {})
+            cost = float(edge.get("weight", 1.0) or 1.0)
+
+            visited.add(neighbor)
+            parent[neighbor] = node
+
+            temp = search(
+                neighbor,
+                g + cost,
+                threshold,
+                parent,
+                visited
+            )
+
+            if isinstance(temp, list):
+                return temp
+
+            min_threshold = min(min_threshold, temp)
+
+            visited.remove(neighbor)
+            parent.pop(neighbor, None)
+
+        return min_threshold
+
+    threshold = min_heuristic(start, goals, coords)
+
+    while True:
+
+        visited = {start}
+        parent = {start: None}
+
+        temp = search(start, 0, threshold, parent, visited)
+
+        if isinstance(temp, list):
+            return temp
+
+        if temp == float("inf"):
+            return None
+
+        threshold = temp

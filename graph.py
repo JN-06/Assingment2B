@@ -66,11 +66,21 @@ def build_graph():
         4043: (3, 1)
     }
 
+    # =========================
+    # ADD NODES
+    # =========================
     for node in NODES:
         G.add_node(node, pos=positions[node])
 
+    # =========================
+    # ADD EDGES (FIXED)
+    # =========================
     for u, v in EDGES:
-        G.add_edge(u, v, weight=1)
+        G.add_edge(
+            u, v,
+            distance=1,   # road length (static)
+            weight=0      # traffic weight (ML will update later)
+        )
 
     return G
 

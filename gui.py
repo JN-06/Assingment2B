@@ -1,36 +1,75 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+
 import networkx as nx
 import matplotlib.pyplot as plt
+
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
+from matplotlib.lines import Line2D
+
 import pandas as pd
-import datetime
 
 from graph import build_graph
 from model import load_models, build_dynamic_graph
 from search import ida_star
 from data import load_data
+from model import NODES_LIST
 
 # =========================
 # LOAD MODELS & DATA
 # =========================
-lstm_model, gru_model, dt_model = load_models()
+models = load_models()
+
+lstm_model = models[0]
+gru_model  = models[1]
+dt_model   = models[2]
+
 base_graph = build_graph()
 
+# =========================
+# RAW SCATS DATA
+# =========================
+raw_df = pd.read_excel(
+    "Scats Data October 2006.xls",
+    sheet_name="Data",
+    engine="xlrd",
+    header=1
+)
+
+raw_df.columns = raw_df.columns.str.strip()
+
 df = load_data("Scats Data October 2006.xls")
-print(df.columns.tolist())
+
 df["SCATS Number"] = df["SCATS Number"].astype(int)
 
+# =========================
+# FIXED TIME
+# 9AM - 10AM
+# =========================
+TIME_COLUMNS = ["V36", "V37", "V38", "V39"]
+
 anim_path = []
+
 current_graph = base_graph
+
 current_model_type = "LSTM"
 
-# =========================
-# SCATS CONFIG
-# =========================
-SCATS_START_HOUR = 9
-SCATS_END_HOUR = 22
+def safe_graph_fix(G):
+
+    for u, v in G.edges():
+
+        base_edge = base_graph.get_edge_data(u, v)
+
+        # preserve ML weight (DO NOT overwrite)
+        G[u][v]["weight"] = float(G[u][v].get("weight", 1.0))
+
+        # keep distance only
+        if base_edge:
+            G[u][v]["distance"] = float(base_edge.get("distance", 1.0))
+        else:
+            G[u][v]["distance"] = 1.0
+
+    return G
 
 # =========================
 # COST CALCULATION
@@ -45,31 +84,276 @@ def calculate_cost(G, path):
 
 
 # =========================
+# GET FIXED TIME COLUMNS
+# =========================
+def get_time_columns():
+
+    return [
+        c for c in TIME_COLUMNS
+        if c in raw_df.columns
+    ]
+
+
+# =========================
+# GET NODE FLOW
+# =========================
+def get_node_flow(scats_id):
+
+    cols = get_time_columns()
+
+    rows = raw_df[
+        raw_df["SCATS Number"] == scats_id
+    ]
+
+    if rows.empty:
+        return 0
+
+    total = rows[cols].sum(axis=1).mean()
+
+    return int(total)
+
+
+# =========================
 # DRAW GRAPH
 # =========================
-def draw_graph(G, path=None, highlight_index=-1):
+def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None):
+
     ax.clear()
+
     pos = nx.get_node_attributes(G, "pos")
+
     ax.set_facecolor("#f0f4f8")
 
-    nx.draw_networkx_edges(G, pos, ax=ax, edge_color="gray", alpha=0.4, width=1.5)
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=600,
-                            node_color="#4da3ff",
-                            edgecolors="black", linewidths=1.5)
-    nx.draw_networkx_labels(G, pos, ax=ax, font_size=9)
+    # =========================
+    # NORMAL EDGES
+    # =========================
+    nx.draw_networkx_edges(
+        G,
+        pos,
+        ax=ax,
+        edge_color="gray",
+        alpha=0.5,
+        width=1.5,
+        arrows=True
+    )
 
+    # =========================
+    # NODES
+    # =========================
+    nx.draw_networkx_nodes(
+        G,
+        pos,
+        ax=ax,
+        node_size=2000,
+        node_color="#f0f4f8",
+        edgecolors="black",
+        linewidths=1.5
+    )
+
+    # =========================
+    # NODE LABELS
+    # =========================
+    nx.draw_networkx_labels(
+        G,
+        pos,
+        ax=ax,
+        font_size=9,
+        font_weight="bold"
+    )
+
+    # =========================
+    # START & GOAL HIGHLIGHT
+    # =========================
+    special_nodes = []
+
+    if start_node is not None:
+        special_nodes.append(start_node)
+
+    if goal_node is not None:
+        special_nodes.append(goal_node)
+
+    if start_node is not None:
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            nodelist=[start_node],
+            ax=ax,
+            node_color="#ffcc00",   # START = yellow
+            node_size=2000
+        )
+
+    if goal_node is not None:
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            nodelist=[goal_node],
+            ax=ax,
+            node_color="#ff3333",   # GOAL = red
+            node_size=2000
+        )
+
+    # =========================
+    # EDGE LABELS (COMBINED - FIXED SIZE)
+    # =========================
+    for (u, v, data) in G.edges(data=True):
+
+        x = (pos[u][0] + pos[v][0]) / 2
+        y = (pos[u][1] + pos[v][1]) / 2
+
+        distance = data.get("distance", None)
+        weight = data.get("weight", None)
+
+        box_style = dict(
+            facecolor="white",
+            edgecolor="none",
+            boxstyle="round,pad=0.25"
+        )
+
+        # =========================
+        # TOP → DISTANCE (RED)
+        # =========================
+        if distance is not None:
+            ax.text(
+                x,
+                y + 0.04,
+                f"D:{distance:>6.2f}",   # fixed width formatting
+                fontsize=7,
+                color="#ff0000",
+                ha="center",
+                va="center",
+                family="monospace",      # IMPORTANT FIX
+                bbox=box_style
+            )
+
+        # =========================
+        # BOTTOM → WEIGHT (ORANGE)
+        # =========================
+        if weight is not None:
+            ax.text(
+                x,
+                y - 0.04,
+                f"W:{weight:>6.2f}",     # fixed width formatting
+                fontsize=7,
+                color="#ff9500",
+                ha="center",
+                va="center",
+                family="monospace",      # IMPORTANT FIX
+                bbox=box_style
+            )
+
+    # =========================
+    # PATH HIGHLIGHT
+    # =========================
     if path and len(path) > 1:
-        edges = list(zip(path, path[1:]))
-        nx.draw_networkx_edges(G, pos, edgelist=edges, ax=ax,
-                               edge_color="#ff9500", width=4)
 
+        edges = list(
+            zip(path, path[1:])
+        )
+
+        # ORANGE PATH
+        nx.draw_networkx_edges(
+            G,
+            pos,
+            edgelist=edges,
+            ax=ax,
+            edge_color="#ff9500",
+            width=1.5,
+            arrows=True
+        )
+
+        # GREEN VISITED NODES
         if highlight_index >= 0:
-            visited = path[:highlight_index + 1]
-            nx.draw_networkx_nodes(G, pos, nodelist=visited, ax=ax,
-                                   node_color="#00cc66", node_size=700)
 
-    ax.set_title("SCATS Route System", fontsize=14)
+            visited = path[:highlight_index + 1]
+
+            nx.draw_networkx_nodes(
+                G,
+                pos,
+                nodelist=visited,
+                ax=ax,
+                node_color="#00cc66",
+                node_size=750
+            )
+
+    # =========================
+    # LEGEND
+    # =========================
+    legend_elements = [
+
+        Line2D([0], [0],
+            color="gray",
+            lw=2,
+            label="Edge (Road connection)"),
+
+        Line2D([0], [0],
+            color="#ff9500",
+            lw=0,
+            label="Distance (Base road length)"),
+
+        Line2D([0], [0],
+            color="#ff0000",
+            lw=0,
+            label="Weight (Traffic + distance cost)"),
+
+        Line2D([0], [0],
+            marker='o',
+            color='w',
+            markerfacecolor="#00cc66",
+            markersize=10,
+            label="Visited node"),
+
+        Line2D([0], [0],
+            marker='o',
+            color='w',
+            markerfacecolor="#f0f4f8",
+            markersize=10,
+            label="Unvisited node"),
+
+        Line2D([0], [0],
+            marker='o',
+            color='w',
+            markerfacecolor="#ffcc00",
+            markersize=10,
+            label="Start node"),
+
+        Line2D([0], [0],
+            marker='o',
+            color='w',
+            markerfacecolor="#ff3333",
+            markersize=10,
+            label="Goal node")
+    ]
+
+    legend = ax.legend(
+        handles=legend_elements,
+        loc="lower right",
+        fontsize=9,
+        frameon=True
+    )
+
+    # =========================
+    # COLOR LEGEND TEXT
+    # =========================
+    for text in legend.get_texts():
+        label = text.get_text()
+
+        if "Distance" in label:
+            text.set_color("red")
+
+        elif "Weight" in label:
+            text.set_color("orange")
+
+    # =========================
+    # TITLE
+    # =========================
+    ax.set_title(
+        f"SCATS Traffic Route System ({current_model_type})",
+        fontsize=15,
+        fontweight="bold"
+    )
+
     ax.set_axis_off()
+
     canvas.draw()
 
 
@@ -77,23 +361,31 @@ def draw_graph(G, path=None, highlight_index=-1):
 # ANIMATION
 # =========================
 def animate(i):
+
     if i >= len(anim_path):
         return
-    draw_graph(current_graph, anim_path, i)
-    root.after(600, animate, i + 1)
 
+    draw_graph(current_graph, anim_path, i, start_global, goal_global)
+
+    root.after(
+        700,
+        animate,
+        i + 1
+    )
 
 # =========================
 # RUN MODEL
 # =========================
 def run_model():
+
     global anim_path, current_graph, current_model_type
+    global start_global, goal_global
 
     try:
         start = int(start_var.get())
         goal = int(goal_var.get())
     except:
-        messagebox.showerror("Input Error", "Select start and goal")
+        messagebox.showerror("Input Error", "Please select start and goal nodes")
         return
 
     if start == goal:
@@ -101,119 +393,126 @@ def run_model():
         return
 
     model_type = model_var.get()
-    algorithm = algo_var.get()
+    current_model_type = model_type
 
-    selected_hour = int(hour_dropdown.get())
+    start_global = start
+    goal_global = goal
 
-    # =========================
-    # FIXED TIME COLUMNS (CORRECT)
-    # =========================
-    def get_time_columns(hour):
-        """
-        SCATS range: V36 → V91 (09:00–22:45)
-        """
-
-        if hour < SCATS_START_HOUR or hour > SCATS_END_HOUR:
-            return []
-
-        start_index = hour * 4
-        cols = [f"V{start_index + i}" for i in range(4)]
-
-        return [c for c in cols if c in df.columns]
-
-    # =========================
-    # MODEL
-    # =========================
     model = {
         "LSTM": lstm_model,
         "GRU": gru_model,
         "DT": dt_model
     }[model_type]
 
-    current_graph = build_dynamic_graph(model, model_type)
+    dynamic_graph = build_dynamic_graph(model, model_type)
 
     # =========================
-    # PATH SEARCH
+    # 🔥 FIX APPLIED (NO LOGIC REMOVED)
     # =========================
-    if algorithm == "IDA*":
-        path = ida_star(current_graph, start, goal)
-    else:
-        path = simple_dfs(current_graph, start, goal)
+    current_graph = safe_graph_fix(dynamic_graph)
+
+    coords = nx.get_node_attributes(current_graph, "pos")
+
+    path = ida_star(current_graph, coords, start, [goal])
 
     if not path:
         messagebox.showerror("No Path", "No path found")
         return
 
     anim_path = path
+
     cost = calculate_cost(current_graph, path)
 
-    # =========================
-    # TOTAL FLOW (FIXED)
-    # =========================
-    # =========================
-    # SCATS FLOW COLUMNS FIX
-    # =========================
-    selected_hour = int(hour_dropdown.get())
+    total_flow = 0
+    node_flows = []
 
-    if selected_hour < 9 or selected_hour > 22:
-        messagebox.showerror(
-            "Invalid Time",
-            "Only SCATS range allowed: 09:00–22:45 (V36–V91)"
-        )
-        return
+    for node in path:
 
+        flow = get_node_flow(node)
 
-    # def get_time_columns(hour):
-    #     start_index = hour * 4
-    #     cols = [f"V{start_index + i}" for i in range(4)]
-    #     return [c for c in cols if c in df.columns]
+        node_flows.append(f"{node}: {flow}")
 
-
-    cols = get_time_columns(selected_hour)
-    total_flow = df[cols].sum(axis=1).sum() if cols else 0
+        total_flow += flow
 
     result_text.set(
-        f"Model: {model_type}\n"
-        f"Algorithm: {algorithm}\n"
-        f"Hour: {selected_hour}:00\n"
-        f"Total Flow: {total_flow}\n"
-        f"Path: {' → '.join(map(str, path))}\n"
-        f"Cost: {cost:.4f}\n"
-        f"Nodes: {len(path)}"
+        f"==============================\n"
+        f"MODEL : {model_type}\n"
+        f"ALGORITHM : IDA*\n"
+        f"TIME : 9AM - 10AM\n"
+        f"==============================\n"
+        f"PATH : {' -> '.join(map(str, path))}\n\n"
+        f"NODE FLOWS:\n"
+        f"{chr(10).join(node_flows)}\n\n"
+        f"TOTAL FLOW : {total_flow}\n"
+        f"TOTAL COST : {cost:.4f}\n"
+        f"NODES VISITED : {len(path)}"
     )
 
     animate(0)
 
 
-# =========================
-# DFS
-# =========================
-def simple_dfs(G, start, goal):
-    stack = [(start, [start])]
-    visited = set()
+def predict_flow_for_node(model, model_type, node):
 
-    while stack:
-        node, path = stack.pop()
+    import numpy as np
+    from model import load_traffic_histories, NODES_LIST
 
-        if node == goal:
-            return path
+    traffic_data = load_traffic_histories()
 
-        if node in visited:
-            continue
+    history = traffic_data.get(node, [0] * 12)
+    history = history[-12:]
+    history = [0] * (12 - len(history)) + history
 
-        visited.add(node)
+    # =========================
+    # META FEATURES (MATCH TRAINING)
+    # =========================
+    flow_t1 = history[-1]
+    flow_t2 = history[-2]
+    flow_mean_3 = np.mean(history[-3:])
+    flow_std_3 = np.std(history[-3:])
 
-        for nxt in G[node]:
-            if nxt not in path:
-                stack.append((nxt, path + [nxt]))
+    meta_features = [
+        9,   # hour
+        1,   # day_of_week
+        1,   # day
+        10,  # month
+        flow_t1,
+        flow_t2,
+        flow_mean_3,
+        flow_std_3
+    ]
 
-    return None
+    loc_onehot = [1 if n == node else 0 for n in NODES_LIST]
 
+    dt_features = meta_features + loc_onehot
+
+    # =========================
+    # DT MODEL
+    # =========================
+    if model_type == "DT":
+        x = np.array(dt_features).reshape(1, -1)
+        return float(model.predict(x)[0])
+
+    # =========================
+    # RNN MODEL (LSTM / GRU)
+    # =========================
+    x = np.array(history + dt_features, dtype=np.float32)
+
+    expected = model.input_shape[-1]
+
+    if len(x) < expected:
+        x = np.pad(x, (0, expected - len(x)))
+    else:
+        x = x[:expected]
+
+    x = x.reshape(1, 1, expected)
+
+    return float(model.predict(x, verbose=0)[0][0])
 
 # =========================
 # COMPARE MODELS
 # =========================
 def compare_all():
+
     try:
         start = int(start_var.get())
         goal = int(goal_var.get())
@@ -228,12 +527,34 @@ def compare_all():
         ("GRU", gru_model, "GRU"),
         ("DT", dt_model, "DT")
     ]:
-        G = build_dynamic_graph(model, mtype)
-        path = ida_star(G, start, goal)
 
-        if path:
+        try:
+            G = build_dynamic_graph(model, mtype)
+            G = safe_graph_fix(G)
+
+            coords = nx.get_node_attributes(G, "pos")
+            path = ida_star(G, coords, start, [goal])
+
+            if not path:
+                continue
+
             cost = calculate_cost(G, path)
-            results.append((name, cost, len(path), path))
+
+            actual_total = 0
+            predicted_total = 0
+
+            for node in path:
+                actual_total += get_node_flow(node)
+                predicted_total += predict_flow_for_node(model, mtype, node)
+
+            error = abs(actual_total - predicted_total)
+
+            results.append((name, cost, len(path),
+                            actual_total, predicted_total, error, path))
+
+        except Exception as e:
+            print(f"{name} failed:", e)
+            continue
 
     if not results:
         messagebox.showerror("Error", "No paths found")
@@ -242,84 +563,219 @@ def compare_all():
     win = tk.Toplevel(root)
     win.title("Model Comparison")
 
-    tree = ttk.Treeview(win,
-                        columns=("Model", "Cost", "Nodes", "Path"),
-                        show="headings")
+    tree = ttk.Treeview(
+        win,
+        columns=("Model", "Cost", "Nodes", "Actual", "Predicted", "Error", "Path"),
+        show="headings"
+    )
 
-    for c in ("Model", "Cost", "Nodes", "Path"):
+    for c in ("Model", "Cost", "Nodes", "Actual", "Predicted", "Error", "Path"):
         tree.heading(c, text=c)
-
-    tree.pack(fill=tk.BOTH, expand=True)
 
     best = min(results, key=lambda x: x[1])
 
     for r in results:
         tag = ("best",) if r[0] == best[0] else ()
-        tree.insert("", tk.END,
-                    values=(r[0], f"{r[1]:.4f}", r[2], "→".join(map(str, r[3]))),
-                    tags=tag)
+
+        tree.insert("", tk.END, values=(
+            r[0],
+            f"{r[1]:.4f}",
+            r[2],
+            r[3],
+            int(r[4]),
+            int(r[5]),
+            " -> ".join(map(str, r[6]))
+        ), tags=tag)
 
     tree.tag_configure("best", background="lightgreen")
+    tree.pack(fill=tk.BOTH, expand=True)
 
 
 # =========================
 # RESET
 # =========================
 def reset():
-    global current_graph, anim_path
+
+    global current_graph
+    global anim_path
+
     current_graph = base_graph
+
     anim_path = []
+
     result_text.set("")
-    draw_graph(base_graph)
+
+    draw_graph(base_graph, start_node=None, goal_node=None)
 
 
 # =========================
 # GUI
 # =========================
 root = tk.Tk()
-root.title("SCATS Route System")
-root.geometry("1250x780")
 
-left = tk.Frame(root)
-left.pack(side=tk.LEFT, fill=tk.Y)
+root.title(
+    "SCATS Traffic Route Prediction System"
+)
 
-tk.Label(left, text="Start").pack()
-start_var = ttk.Combobox(left, values=sorted(base_graph.nodes()))
-start_var.pack()
+root.geometry("1350x820")
 
-tk.Label(left, text="Goal").pack()
-goal_var = ttk.Combobox(left, values=sorted(base_graph.nodes()))
-goal_var.pack()
+# =========================
+# LEFT PANEL
+# =========================
+left = tk.Frame(
+    root,
+    padx=10,
+    pady=10
+)
 
-tk.Label(left, text="Model").pack()
-model_var = ttk.Combobox(left, values=["LSTM", "GRU", "DT"])
+left.pack(
+    side=tk.LEFT,
+    fill=tk.Y
+)
+
+title = tk.Label(
+    left,
+    text="Traffic Route System",
+    font=("Arial", 16, "bold")
+)
+
+title.pack(pady=10)
+
+# =========================
+# START
+# =========================
+tk.Label(
+    left,
+    text="Start SCATS"
+).pack()
+
+start_var = ttk.Combobox(
+    left,
+    values=sorted(base_graph.nodes()),
+    width=25
+)
+
+start_var.pack(pady=5)
+
+# =========================
+# GOAL
+# =========================
+tk.Label(
+    left,
+    text="Goal SCATS"
+).pack()
+
+goal_var = ttk.Combobox(
+    left,
+    values=sorted(base_graph.nodes()),
+    width=25
+)
+
+goal_var.pack(pady=5)
+
+# =========================
+# MODEL
+# =========================
+tk.Label(
+    left,
+    text="Prediction Model"
+).pack()
+
+model_var = ttk.Combobox(
+    left,
+    values=[
+        "LSTM",
+        "GRU",
+        "DT"
+    ],
+    width=25
+)
+
 model_var.set("LSTM")
-model_var.pack()
 
-tk.Label(left, text="Algorithm").pack()
-algo_var = ttk.Combobox(left, values=["IDA*", "DFS"])
-algo_var.set("IDA*")
-algo_var.pack()
+model_var.pack(pady=5)
 
-tk.Label(left, text="Hour (9-22)").pack()
-hour_dropdown = ttk.Combobox(left, values=list(range(9, 23)))
-hour_dropdown.current(0)
-hour_dropdown.pack()
+# =========================
+# BUTTONS
+# =========================
+tk.Button(
+    left,
+    text="Run Model",
+    command=run_model,
+    bg="#4CAF50",
+    fg="white",
+    width=25
+).pack(pady=10)
 
-tk.Button(left, text="Run", command=run_model).pack()
-tk.Button(left, text="Compare", command=compare_all).pack()
-tk.Button(left, text="Reset", command=reset).pack()
+tk.Button(
+    left,
+    text="Compare Models",
+    command=compare_all,
+    bg="#2196F3",
+    fg="white",
+    width=25
+).pack(pady=5)
 
+tk.Button(
+    left,
+    text="Reset",
+    command=reset,
+    bg="#f44336",
+    fg="white",
+    width=25
+).pack(pady=5)
+
+# =========================
+# RESULT DISPLAY
+# =========================
 result_text = tk.StringVar()
-tk.Label(left, textvariable=result_text, justify="left").pack()
 
+result_label = tk.Label(
+    left,
+    textvariable=result_text,
+    justify="left",
+    anchor="w",
+    font=("Consolas", 10),
+    bg="#f4f4f4",
+    relief="solid",
+    padx=10,
+    pady=10
+)
+
+result_label.pack(
+    fill=tk.BOTH,
+    expand=True,
+    pady=15
+)
+
+# =========================
+# RIGHT PANEL
+# =========================
 right = tk.Frame(root)
-right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-fig, ax = plt.subplots(figsize=(8, 6))
-canvas = FigureCanvasTkAgg(fig, master=right)
-canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+right.pack(
+    side=tk.RIGHT,
+    fill=tk.BOTH,
+    expand=True
+)
+
+fig, ax = plt.subplots(
+    figsize=(10, 7)
+)
+
+canvas = FigureCanvasTkAgg(
+    fig,
+    master=right
+)
+
+canvas.get_tk_widget().pack(
+    fill=tk.BOTH,
+    expand=True
+)
 
 draw_graph(base_graph)
 
+# =========================
+# RUN GUI
+# =========================
 root.mainloop()

@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import joblib
 import random
@@ -11,6 +10,8 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, GRU, Dense
 
+import numpy as np
+
 # =========================
 # FIX RANDOM SEED
 # =========================
@@ -18,100 +19,249 @@ np.random.seed(42)
 random.seed(42)
 tf.random.set_seed(42)
 
+# =========================
+# GLOBAL CONFIG
+# =========================
+STEP = 12
+
+NODES_LIST = [
+    3120, 3122, 3126, 3180, 4030,
+    4032, 4034, 4035, 4040, 4043
+]
 
 # =========================
-# LOAD DATA
+# FEATURE ENGINEERING
+# =========================
+def create_dt_features(df):
+
+    df = df.copy()
+
+    # lag features
+    df["flow_t1"] = df["flow_9to10"].shift(1)
+    df["flow_t2"] = df["flow_9to10"].shift(2)
+
+    # rolling features
+    df["flow_mean_3"] = df["flow_9to10"].rolling(3).mean()
+    df["flow_std_3"] = df["flow_9to10"].rolling(3).std()
+
+    # remove NaN
+    df = df.bfill()
+
+    return df
+
+
+# =========================
+# LOAD DATASET
 # =========================
 def load_dataset():
+
     train = pd.read_csv("data/train.csv")
     test = pd.read_csv("data/test.csv")
 
-    def extract_features(df):         
-        df = df.copy()
-        df["hour"] = 9  # flow_9to10 always = 9am slot
+    def extract_features(df):
 
-        df = pd.get_dummies(df, columns=["Location"])  # capital L to match data.py
+        df = create_dt_features(df)
 
-        feature_cols = ["hour", "day_of_week", "day", "month"] + \
-                       [c for c in df.columns if c.startswith("Location_")]
-        return df[feature_cols].values, df["flow_9to10"].values
+        # =========================
+        # TIME FEATURES
+        # =========================
+        if "hour" not in df.columns:
+            df["hour"] = 9
 
-    X_train_meta, y_train = extract_features(train)
-    X_test_meta,  y_test  = extract_features(test)
+        if "day_of_week" not in df.columns:
+            df["day_of_week"] = 1
 
+        if "day" not in df.columns:
+            df["day"] = 1
+
+        if "month" not in df.columns:
+            df["month"] = 10
+
+        # =========================
+        # LOCATION ONE HOT
+        # =========================
+        for n in NODES_LIST:
+            df[f"Location_{n}"] = (
+                df["SCATS Number"] == n
+            ).astype(int)
+
+        feature_cols = [
+
+            # time features
+            "hour",
+            "day_of_week",
+            "day",
+            "month",
+
+            # traffic features
+            "flow_t1",
+            "flow_t2",
+            "flow_mean_3",
+            "flow_std_3"
+
+        ] + [f"Location_{n}" for n in NODES_LIST]
+
+        X = df[feature_cols].values
+
+        y = df["flow_9to10"].values
+
+        return X, y
+
+    X_train, y_train = extract_features(train)
+    X_test, y_test = extract_features(test)
+
+    # =========================
+    # SCALE TARGET
+    # =========================
     scaler_y = MinMaxScaler()
-    y_train = scaler_y.fit_transform(y_train.reshape(-1, 1)).flatten()
-    y_test  = scaler_y.transform(y_test.reshape(-1, 1)).flatten()
 
+    y_train = scaler_y.fit_transform(
+        y_train.reshape(-1, 1)
+    ).flatten()
+
+    y_test = scaler_y.transform(
+        y_test.reshape(-1, 1)
+    ).flatten()
+
+    # =========================
+    # SCALE FEATURES
+    # =========================
     scaler_X = MinMaxScaler()
-    X_train_meta = scaler_X.fit_transform(X_train_meta)
-    X_test_meta  = scaler_X.transform(X_test_meta)
 
-    return X_train_meta, X_test_meta, y_train, y_test, scaler_y
+    X_train = scaler_X.fit_transform(X_train)
+    X_test = scaler_X.transform(X_test)
+
+    # save scaler for inference
+    joblib.dump(scaler_X, "model/scaler_X.pkl")
+
+    return X_train, X_test, y_train, y_test, scaler_y
 
 
 # =========================
 # SEQUENCE BUILDER
 # =========================
-def create_sequence(X_meta, y, step=12):
-    X, targets = [], []
-    for i in range(len(y) - step):
-        past_flow = y[i:i + step]               # shape (step,)
-        meta      = X_meta[i + step]            # location + date of the TARGET step
-        combined  = np.concatenate([past_flow, meta])
-        X.append(combined)
-        targets.append(y[i + step])
-    return np.array(X), np.array(targets)
+def create_sequence(X, y, step=12):
+
+    X_seq = []
+    y_seq = []
+
+    for i in range(len(X) - step):
+
+        # previous timesteps
+        sequence = X[i:i + step]
+
+        # target
+        target = y[i + step]
+
+        X_seq.append(sequence)
+        y_seq.append(target)
+
+    return np.array(X_seq), np.array(y_seq)
 
 
 # =========================
-# MODELS
+# LSTM MODEL
 # =========================
 def build_lstm(input_shape):
+
     model = Sequential([
         LSTM(64, input_shape=input_shape),
         Dense(1)
     ])
-    model.compile(optimizer="adam", loss="mse")
+
+    model.compile(
+        optimizer="adam",
+        loss="mse"
+    )
+
     return model
 
 
+# =========================
+# GRU MODEL
+# =========================
 def build_gru(input_shape):
+
     model = Sequential([
         GRU(64, input_shape=input_shape),
         Dense(1)
     ])
-    model.compile(optimizer="adam", loss="mse")
+
+    model.compile(
+        optimizer="adam",
+        loss="mse"
+    )
+
     return model
 
 
 # =========================
-# DECISION TREE + LOSS CSV
+# DECISION TREE
 # =========================
 def train_dt(X_train, y_train):
-    dt = DecisionTreeRegressor(max_depth=8, min_samples_leaf=2, random_state=42)
-    dt.fit(X_train, y_train)   # no reshape needed anymore
-    joblib.dump(dt, "model/decision_tree.pkl")
+
+    dt = DecisionTreeRegressor(
+        max_depth=6,
+        min_samples_leaf=5,
+        random_state=42
+    )
+
+    dt.fit(X_train, y_train)
+
+    joblib.dump(
+        dt,
+        "model/decision_tree.pkl"
+    )
+
+    # loss log
     preds = dt.predict(X_train)
-    errors = np.abs(y_train.flatten() - preds)
-    pd.DataFrame({"step": np.arange(len(errors)), "absolute_error": errors}).to_csv("model/dt_loss.csv", index=False)
+
+    errors = np.abs(
+        y_train.flatten() - preds
+    )
+
+    pd.DataFrame({
+        "step": np.arange(len(errors)),
+        "absolute_error": errors
+    }).to_csv(
+        "model/dt_loss.csv",
+        index=False
+    )
+
     return dt
 
 
 # =========================
-# METRICS
+# EVALUATION
 # =========================
 def evaluate_model(y_true, y_pred):
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae = mean_absolute_error(y_true, y_pred)
-    nrmse = rmse / (y_true.max() - y_true.min())
+
+    rmse = np.sqrt(
+        mean_squared_error(y_true, y_pred)
+    )
+
+    mae = mean_absolute_error(
+        y_true,
+        y_pred
+    )
+
+    nrmse = rmse / (
+        y_true.max() - y_true.min()
+    )
+
     return rmse, mae, nrmse
 
 
 # =========================
-# DISPLAY PREDICTIONS
+# DISPLAY RESULTS
 # =========================
-def display_predictions(model_name, actual_scaled, predicted_scaled, y_scaler):
+def display_predictions(
+    model_name,
+    actual_scaled,
+    predicted_scaled,
+    y_scaler
+):
+
     actual = y_scaler.inverse_transform(
         actual_scaled.reshape(-1, 1)
     ).flatten()
@@ -121,13 +271,17 @@ def display_predictions(model_name, actual_scaled, predicted_scaled, y_scaler):
     ).flatten()
 
     errors = np.abs(actual - predicted)
-    accuracy = 100 - np.mean(errors / actual) * 100
 
-    print(f"\n===================================")
+    accuracy = 100 - np.mean(
+        errors / actual
+    ) * 100
+
+    print("\n===================================")
     print(f"{model_name} PREDICTION RESULTS")
-    print(f"===================================")
+    print("===================================")
 
     for i in range(10):
+
         print(
             f"Sample {i+1} | "
             f"Actual: {int(actual[i])} cars | "
@@ -136,6 +290,7 @@ def display_predictions(model_name, actual_scaled, predicted_scaled, y_scaler):
         )
 
     print(f"\n{model_name} Accuracy: {accuracy:.2f}%")
+
     return accuracy
 
 
@@ -143,57 +298,187 @@ def display_predictions(model_name, actual_scaled, predicted_scaled, y_scaler):
 # MAIN
 # =========================
 def main():
-    X_train_meta, X_test_meta, y_train, y_test, scaler = load_dataset()
-    STEP = 12
 
-    X_train, y_train_seq = create_sequence(X_train_meta, y_train, STEP)
-    X_test,  y_test_seq  = create_sequence(X_test_meta,  y_test,  STEP)
+    X_train, X_test, y_train, y_test, scaler = load_dataset()
 
-    input_dim = X_train.shape[1]  # STEP + number of meta features
+    # =========================
+    # CREATE RNN SEQUENCES
+    # =========================
+    X_train_seq, y_train_seq = create_sequence(
+        X_train,
+        y_train,
+        STEP
+    )
 
-    # RNN expects (samples, timesteps, features) — treat full vector as 1 timestep
-    X_train_rnn = X_train.reshape(X_train.shape[0], 1, input_dim)
-    X_test_rnn  = X_test.reshape(X_test.shape[0],  1, input_dim)
+    X_test_seq, y_test_seq = create_sequence(
+        X_test,
+        y_test,
+        STEP
+    )
+
+    input_shape = (
+        X_train_seq.shape[1],
+        X_train_seq.shape[2]
+    )
 
     results = []
 
+    # =========================
     # LSTM
+    # =========================
     print("\nTraining LSTM...")
-    lstm = build_lstm((1, input_dim))
-    hist_lstm = lstm.fit(X_train_rnn, y_train_seq, epochs=10, batch_size=32, verbose=1)
+
+    lstm = build_lstm(input_shape)
+
+    hist_lstm = lstm.fit(
+        X_train_seq,
+        y_train_seq,
+        epochs=10,
+        batch_size=32,
+        verbose=1
+    )
+
     lstm.save("model/lstm.h5")
-    pd.DataFrame(hist_lstm.history).to_csv("model/lstm_loss.csv", index=False)
-    lstm_pred = lstm.predict(X_test_rnn, verbose=0)
-    lstm_rmse, lstm_mae, lstm_nrmse = evaluate_model(y_test_seq, lstm_pred)
-    lstm_accuracy = display_predictions("LSTM", y_test_seq, lstm_pred, scaler)  
-    results.append(["LSTM", lstm_rmse, lstm_mae, lstm_nrmse, lstm_accuracy])
 
+    pd.DataFrame(
+        hist_lstm.history
+    ).to_csv(
+        "model/lstm_loss.csv",
+        index=False
+    )
+
+    lstm_pred = lstm.predict(
+        X_test_seq,
+        verbose=0
+    )
+
+    lstm_rmse, lstm_mae, lstm_nrmse = evaluate_model(
+        y_test_seq,
+        lstm_pred
+    )
+
+    lstm_acc = display_predictions(
+        "LSTM",
+        y_test_seq,
+        lstm_pred,
+        scaler
+    )
+
+    results.append([
+        "LSTM",
+        lstm_rmse,
+        lstm_mae,
+        lstm_nrmse,
+        lstm_acc
+    ])
+
+    # =========================
     # GRU
+    # =========================
     print("\nTraining GRU...")
-    gru = build_gru((1, input_dim))
-    hist_gru = gru.fit(X_train_rnn, y_train_seq, epochs=10, batch_size=32, verbose=1)
+
+    gru = build_gru(input_shape)
+
+    hist_gru = gru.fit(
+        X_train_seq,
+        y_train_seq,
+        epochs=10,
+        batch_size=32,
+        verbose=1
+    )
+
     gru.save("model/gru.h5")
-    pd.DataFrame(hist_gru.history).to_csv("model/gru_loss.csv", index=False)
-    gru_pred = gru.predict(X_test_rnn, verbose=0)
-    gru_rmse, gru_mae, gru_nrmse = evaluate_model(y_test_seq, gru_pred)
-    gru_accuracy = display_predictions("GRU", y_test_seq, gru_pred, scaler)     # add this
-    results.append(["GRU", gru_rmse, gru_mae, gru_nrmse, gru_accuracy])
 
-    # DT
+    pd.DataFrame(
+        hist_gru.history
+    ).to_csv(
+        "model/gru_loss.csv",
+        index=False
+    )
+
+    gru_pred = gru.predict(
+        X_test_seq,
+        verbose=0
+    )
+
+    gru_rmse, gru_mae, gru_nrmse = evaluate_model(
+        y_test_seq,
+        gru_pred
+    )
+
+    gru_acc = display_predictions(
+        "GRU",
+        y_test_seq,
+        gru_pred,
+        scaler
+    )
+
+    results.append([
+        "GRU",
+        gru_rmse,
+        gru_mae,
+        gru_nrmse,
+        gru_acc
+    ])
+
+    # =========================
+    # DECISION TREE
+    # =========================
     print("\nTraining DT...")
-    dt = train_dt(X_train, y_train_seq)
-    dt_pred = dt.predict(X_test)   
-    dt_rmse, dt_mae, dt_nrmse = evaluate_model(y_test_seq, dt_pred)
-    dt_accuracy = display_predictions("DT", y_test_seq, dt_pred, scaler)        # add this
-    results.append(["DT", dt_rmse, dt_mae, dt_nrmse, dt_accuracy])
 
-    # SAVE
-    results_df = pd.DataFrame(results, columns=["model", "rmse", "mae", "nrmse", "accuracy"])
-    results_df.to_csv("model/results.csv", index=False)
+    dt = train_dt(
+        X_train,
+        y_train
+    )
+
+    dt_pred = dt.predict(X_test)
+
+    dt_rmse, dt_mae, dt_nrmse = evaluate_model(
+        y_test,
+        dt_pred
+    )
+
+    dt_acc = display_predictions(
+        "DT",
+        y_test,
+        dt_pred,
+        scaler
+    )
+
+    results.append([
+        "DT",
+        dt_rmse,
+        dt_mae,
+        dt_nrmse,
+        dt_acc
+    ])
+
+    # =========================
+    # SAVE RESULTS
+    # =========================
+    results_df = pd.DataFrame(
+        results,
+        columns=[
+            "model",
+            "rmse",
+            "mae",
+            "nrmse",
+            "accuracy"
+        ]
+    )
+
+    results_df.to_csv(
+        "model/results.csv",
+        index=False
+    )
+
     print("\n==============================")
-    print("FINAL RESULTS SAVED: model/results.csv")
+    print("FINAL RESULTS")
     print("==============================")
+
     print(results_df)
+
+    joblib.dump(scaler, "model/y_scaler.pkl")
 
 
 # =========================
