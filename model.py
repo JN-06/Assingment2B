@@ -98,9 +98,29 @@ def predict_rnn(model, data):
     elif len(data) < expected_dim:
         data = np.pad(data, (0, expected_dim - len(data)))
 
-    x = data.reshape(1, 1, expected_dim)
+    timesteps = model.input_shape[1]
+    features = model.input_shape[2]
 
-    prediction = model.predict(x, verbose=0)
+    needed = timesteps * features
+
+    if len(data) < needed:
+        data = np.pad(
+            data,
+            (0, needed-len(data))
+        )
+    else:
+        data = data[:needed]
+
+    x = data.reshape(
+        1,
+        timesteps,
+        features
+    )
+
+    prediction = model.predict(
+        x,
+        verbose=0
+    )
 
     return float(prediction[0][0])
 
@@ -117,11 +137,21 @@ def predict_tree(model, data):
 # =========================
 # BUILD DYNAMIC GRAPH
 # =========================
-def build_dynamic_graph(model, model_type):
+def build_dynamic_graph(
+    model,
+    model_type,
+    y_scaler=None
+):
 
     G = build_graph()
 
     traffic_data = load_traffic_histories()
+
+    # load once only
+    if y_scaler is None:
+        y_scaler = joblib.load(
+            "model/y_scaler.pkl"
+        )
 
     # fixed date/time features
     hour = 9
@@ -195,7 +225,9 @@ def build_dynamic_graph(model, model_type):
         # =========================
         # SCALE BACK
         # =========================
-        predicted_flow = predicted_flow * 1000
+        predicted_flow = y_scaler.inverse_transform(
+            [[predicted_flow]]
+        )[0][0]
 
         # safety cap
         predicted_flow = max(1, min(predicted_flow, 2000))
@@ -205,12 +237,13 @@ def build_dynamic_graph(model, model_type):
         # =========================
         speed = flow_to_speed(predicted_flow)
 
-        travel_time = (1.0 / speed) * 60 + 0.5
+        distance = G[u][v]["distance"]
 
-        # IMPORTANT:
-        # add slight variation
-        # so all edges are not identical
-        travel_time += (v % 5) * 0.05
+        travel_time = (
+            distance / speed
+        ) * 60
+
+        travel_time += predicted_flow / 1000
 
         G[u][v]["weight"] = round(travel_time, 4)
 

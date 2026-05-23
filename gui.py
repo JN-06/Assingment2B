@@ -23,6 +23,7 @@ models = load_models()
 lstm_model = models[0]
 gru_model  = models[1]
 dt_model   = models[2]
+y_scaler   = models[3]
 
 base_graph = build_graph()
 
@@ -404,7 +405,11 @@ def run_model():
         "DT": dt_model
     }[model_type]
 
-    dynamic_graph = build_dynamic_graph(model, model_type)
+    dynamic_graph = build_dynamic_graph(
+        model,
+        model_type,
+        y_scaler
+    )
 
     # =========================
     # 🔥 FIX APPLIED (NO LOGIC REMOVED)
@@ -495,18 +500,39 @@ def predict_flow_for_node(model, model_type, node):
     # =========================
     # RNN MODEL (LSTM / GRU)
     # =========================
-    x = np.array(history + dt_features, dtype=np.float32)
+    x = np.array(
+    history + dt_features,
+    dtype=np.float32
+    )
 
-    expected = model.input_shape[-1]
+    # get model dimensions
+    timesteps = model.input_shape[1]
+    features = model.input_shape[2]
 
-    if len(x) < expected:
-        x = np.pad(x, (0, expected - len(x)))
+    needed = timesteps * features
+
+    # padding / trimming
+    if len(x) < needed:
+        x = np.pad(
+            x,
+            (0, needed - len(x))
+        )
     else:
-        x = x[:expected]
+        x = x[:needed]
 
-    x = x.reshape(1, 1, expected)
+    # CORRECT SHAPE
+    x = x.reshape(
+        1,
+        timesteps,
+        features
+    )
 
-    return float(model.predict(x, verbose=0)[0][0])
+    return float(
+        model.predict(
+            x,
+            verbose=0
+        )[0][0]
+    )
 
 # =========================
 # COMPARE MODELS
@@ -544,10 +570,25 @@ def compare_all():
             predicted_total = 0
 
             for node in path:
-                actual_total += get_node_flow(node)
-                predicted_total += predict_flow_for_node(model, mtype, node)
 
-            error = abs(actual_total - predicted_total)
+                actual_total += get_node_flow(node)
+
+                pred = predict_flow_for_node(
+                    model,
+                    mtype,
+                    node
+                )
+
+                # convert scaled value back to real traffic flow
+                pred = y_scaler.inverse_transform(
+                    [[pred]]
+                )[0][0]
+
+                predicted_total += pred
+
+            error = abs(
+                actual_total - predicted_total
+            )
 
             results.append((name, cost, len(path),
                             actual_total, predicted_total, error, path))
@@ -578,14 +619,14 @@ def compare_all():
         tag = ("best",) if r[0] == best[0] else ()
 
         tree.insert("", tk.END, values=(
-            r[0],
-            f"{r[1]:.4f}",
-            r[2],
-            r[3],
-            int(r[4]),
-            int(r[5]),
-            " -> ".join(map(str, r[6]))
-        ), tags=tag)
+            r[0],                 # Model
+            f"{r[1]:.4f}",        # Cost
+            r[2],                 # Nodes
+            int(r[3]),            # Actual
+            int(r[4]),            # Predicted
+            int(r[5]),            # Error
+            " -> ".join(map(str,r[6]))
+        ))
 
     tree.tag_configure("best", background="lightgreen")
     tree.pack(fill=tk.BOTH, expand=True)

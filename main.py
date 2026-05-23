@@ -1,6 +1,7 @@
 from graph import build_graph
 from model import load_models, build_dynamic_graph
 from search import ida_star
+import networkx as nx
 
 
 # =========================
@@ -38,10 +39,11 @@ def calculate_cost(G, path):
 # =========================
 def run_system(name, model, model_type, start, goal):
     G = build_dynamic_graph(model, model_type)
-
     print(f"\nRunning {name}...")
 
-    path = ida_star(G, start, goal)
+    # Get coords and pass goal as list
+    coords = nx.get_node_attributes(G, "pos")
+    path = ida_star(G, coords, start, [goal])
 
     if not path:
         print(f"❌ {name}: No path found")
@@ -68,7 +70,7 @@ def main():
     print("====================================\n")
 
     print("Loading models...")
-    lstm, gru, dt = load_models()
+    lstm, gru, dt, y_scalar = load_models()
     print("✔ Models loaded")
 
     # =========================
@@ -104,10 +106,26 @@ def main():
 
     results = [r for r in results if r[1] is not None]
 
-    best = min(results, key=lambda x: x[1])
-
-    print("\nBest Model:", best[0])
-    print("Lowest Cost:", round(best[1], 4))
+    if results:
+        # Sort by cost, then by name for consistent tie-breaking
+        results_sorted = sorted(results, key=lambda x: (x[1], x[0]))
+        best = results_sorted[0]
+    
+        # Check for ties
+        tied = [r for r in results if abs(r[1] - best[1]) < 0.0001]
+    
+        if len(tied) > 1:
+            # Multiple winners
+            winners = ", ".join([r[0] for r in tied])
+            print(f"Best Model:  {winners}")
+            print(f"Lowest Cost:  {best[1]:.2f}")
+            print(f"\nNote: {len(tied)} models tied for best cost!")
+        else:
+            # Single winner
+            print(f"Best Model:  {best[0]}")
+            print(f"Lowest Cost:  {best[1]:.2f}")
+    else:
+        print("\n❌ No valid paths found")
 
     print("\n====================================")
 
