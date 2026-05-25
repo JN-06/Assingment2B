@@ -2,6 +2,7 @@ from graph import build_graph
 from model import load_models, build_dynamic_graph
 from search import ida_star
 import networkx as nx
+import time
 
 
 # =========================
@@ -43,11 +44,24 @@ def run_system(name, model, model_type, start, goal):
 
     # Get coords and pass goal as list
     coords = nx.get_node_attributes(G, "pos")
-    path = ida_star(G, coords, start, [goal])
+    # start timer
+    start_time = time.time()
+
+    path = ida_star(
+        G,
+        coords,
+        start,
+        [goal]
+    )
+
+    # stop timer
+    end_time = time.time()
+
+    execution_time = end_time - start_time
 
     if not path:
         print(f"❌ {name}: No path found")
-        return None, None, G
+        return None, None, None, G
 
     cost = calculate_cost(G, path)
 
@@ -55,9 +69,14 @@ def run_system(name, model, model_type, start, goal):
     print("Path:", " -> ".join(map(str, path)))
     print("Cost:", round(cost, 4))
     print("Nodes:", len(path))
+    print(
+        "Execution Time:",
+        f"{execution_time:.6f}",
+        "seconds"
+    )
     print("-" * 40)
 
-    return path, cost, G
+    return path, cost, execution_time, G
 
 
 # =========================
@@ -87,9 +106,17 @@ def main():
     # =========================
     # RUN ALL MODELS
     # =========================
-    lstm_path, lstm_cost, _ = run_system("LSTM + IDA*", lstm, "LSTM", start, goal)
-    gru_path, gru_cost, _ = run_system("GRU + IDA*", gru, "GRU", start, goal)
-    dt_path, dt_cost, _ = run_system("DT + IDA*", dt, "DT", start, goal)
+    lstm_path, lstm_cost, lstm_time, _ = run_system(
+        "LSTM + IDA*", lstm, "LSTM", start, goal
+    )
+
+    gru_path, gru_cost, gru_time, _ = run_system(
+        "GRU + IDA*", gru, "GRU", start, goal
+    )
+
+    dt_path, dt_cost, dt_time, _ = run_system(
+        "DT + IDA*", dt, "DT", start, goal
+    )
 
     # =========================
     # FINAL COMPARISON
