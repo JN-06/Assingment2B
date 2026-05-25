@@ -15,6 +15,8 @@ from search import ida_star
 from data import load_data
 from model import NODES_LIST
 
+import time
+
 # =========================
 # LOAD MODELS & DATA
 # =========================
@@ -418,7 +420,16 @@ def run_model():
 
     coords = nx.get_node_attributes(current_graph, "pos")
 
-    path = ida_star(current_graph, coords, start, [goal])
+    start_time = time.time()
+
+    path = ida_star(
+        current_graph,
+        coords,
+        start,
+        [goal]
+    )
+
+    execution_time = time.time() - start_time
 
     if not path:
         messagebox.showerror("No Path", "No path found")
@@ -450,7 +461,8 @@ def run_model():
         f"{chr(10).join(node_flows)}\n\n"
         f"TOTAL FLOW : {total_flow}\n"
         f"TOTAL COST : {cost:.4f}\n"
-        f"NODES VISITED : {len(path)}"
+        f"NODES VISITED : {len(path)}\n"
+        f"EXECUTION TIME : {execution_time*1000:.3f} ms\n"
     )
 
     animate(0)
