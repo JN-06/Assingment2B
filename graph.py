@@ -1,17 +1,15 @@
 import networkx as nx
+import math
 
-# =========================
+
 # NODES
-# =========================
 NODES = [
     3120, 3122, 3126, 3180,
     4030, 4032, 4034, 4035,
     4040, 4043
 ]
 
-# =========================
 # EDGES (TRAFFIC LINKS)
-# =========================
 EDGES = [
     (3120, 3122),
     (3120, 4030),
@@ -47,9 +45,7 @@ EDGES = [
     (3180, 3120),
 ]
 
-# =========================
 # BUILD GRAPH
-# =========================
 def build_graph():
     G = nx.DiGraph()
 
@@ -66,28 +62,28 @@ def build_graph():
         4043: (3, 1)
     }
 
-    # =========================
     # ADD NODES
-    # =========================
     for node in NODES:
         G.add_node(node, pos=positions[node])
 
-    # =========================
     # ADD EDGES (FIXED)
-    # =========================
     for u, v in EDGES:
+
+        x1, y1 = positions[u]
+        x2, y2 = positions[v]
+
+        dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
         G.add_edge(
-            u, v,
-            distance=1,   # road length (static)
-            weight=0      # traffic weight (ML will update later)
+            u,
+            v,
+            distance=round(dist, 2),
+            weight=0
         )
 
     return G
 
-
-# =========================
 # TEST
-# =========================
 if __name__ == "__main__":
     G = build_graph()
 

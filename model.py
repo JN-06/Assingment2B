@@ -5,9 +5,7 @@ from tensorflow.keras.models import load_model
 from graph import build_graph
 import math
 
-# =========================
 # NODES LIST
-# =========================
 NODES_LIST = [
     3120, 3122, 3126, 3180, 4030,
     4032, 4034, 4035, 4040, 4043
@@ -15,9 +13,7 @@ NODES_LIST = [
 
 STEP = 12
 
-# =========================
 # LOAD MODELS
-# =========================
 def load_models():
     lstm = load_model("model/lstm.h5", compile=False)
     gru = load_model("model/gru.h5", compile=False)
@@ -27,9 +23,7 @@ def load_models():
     return lstm, gru, dt, y_scaler
 
 
-# =========================
-# LOAD REAL TRAFFIC HISTORY
-# =========================
+# load historical scats traffic flow data, use latest 12 traffic values as prediction input
 def load_traffic_histories():
 
     df = pd.read_csv("data/train.csv")
@@ -53,9 +47,9 @@ def load_traffic_histories():
     return traffic_data
 
 
-# =========================
 # FLOW → SPEED CONVERSION
-# =========================
+# Convert predicted traffic flow into vehicle speed
+# Higher traffic flow = lower speed due to congestion
 def flow_to_speed(flow):
 
     if flow <= 351:
@@ -82,9 +76,8 @@ def flow_to_speed(flow):
     return speed
 
 
-# =========================
 # PREDICTION HELPERS
-# =========================
+# LSTM and GRU use sequential historical traffic data 
 def predict_rnn(model, data):
 
     data = np.array(data, dtype=np.float32)
@@ -124,7 +117,7 @@ def predict_rnn(model, data):
 
     return float(prediction[0][0])
 
-
+#Decision Tree uses engineered traffic features
 def predict_tree(model, data):
 
     data = np.array(data, dtype=np.float32).reshape(1, -1)
@@ -134,9 +127,8 @@ def predict_tree(model, data):
     return float(prediction[0])
 
 
-# =========================
-# BUILD DYNAMIC GRAPH
-# =========================
+# buid dynamic graph - Build graph with dynamic traffic weights
+
 def build_dynamic_graph(
     model,
     model_type,
@@ -161,27 +153,21 @@ def build_dynamic_graph(
 
     for u, v in G.edges():
 
-        # =========================
-        # GET LOCATION HISTORY
-        # =========================
+        # get location history for v, use zeros if no history available, for each SCATS node
         history = traffic_data.get(v, [0] * STEP)
 
         history = history[-STEP:]
 
         history = [0] * (STEP - len(history)) + history
 
-        # =========================
-        # LOCATION ONE HOT
-        # =========================
+        # Encode SCATS location into machine learning features 1,0
         loc_onehot = [
             1 if n == v else 0
             for n in NODES_LIST
         ]
 
-        # =========================
         # DT FEATURES
-        # MUST MATCH train.py EXACTLY
-        # =========================
+        # Create engineered features: previous flow, average flow, std deviation, time, location
         flow_t1 = history[-1]
         flow_t2 = history[-2]
 
@@ -199,15 +185,10 @@ def build_dynamic_graph(
             flow_std_3
         ] + loc_onehot
 
-        # =========================
-        # RNN FEATURES
-        # MUST MATCH train.py EXACTLY
-        # =========================
+        # RNN FEATURES - Combine traffic history + engineered features for LSTM/GRU
         rnn_features = history + dt_features
 
-        # =========================
         # PREDICTION
-        # =========================
         if model_type == "DT":
 
             predicted_flow = predict_tree(
@@ -222,9 +203,7 @@ def build_dynamic_graph(
                 rnn_features
             )
 
-        # =========================
-        # SCALE BACK
-        # =========================
+        # Scale back - Convert scaled prediction back into actual traffic flow
         predicted_flow = y_scaler.inverse_transform(
             [[predicted_flow]]
         )[0][0]
@@ -232,19 +211,19 @@ def build_dynamic_graph(
         # safety cap
         predicted_flow = max(1, min(predicted_flow, 2000))
 
-        # =========================
         # FLOW → SPEED → TIME
-        # =========================
+        #Convert predicted flow into speed using traffic equation
         speed = flow_to_speed(predicted_flow)
 
         distance = G[u][v]["distance"]
+        # Calculate travel time, hours convert to minutes, add fixed intersection delay, and set as edge weight
+        travel_time = (distance / speed) * 60
 
-        travel_time = (
-            distance / speed
-        ) * 60
+        intersection_delay = 0.5  # 30 seconds = 0.5m
 
-        travel_time += predicted_flow / 1000
+        travel_time += intersection_delay
 
+        # final weight - Travel time is assigned as the final edge weight for routing algorithm
         G[u][v]["weight"] = round(travel_time, 4)
 
         print(

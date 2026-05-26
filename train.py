@@ -12,16 +12,12 @@ from tensorflow.keras.layers import LSTM, GRU, Dense
 
 import numpy as np
 
-# =========================
 # FIX RANDOM SEED
-# =========================
 np.random.seed(42)
 random.seed(42)
 tf.random.set_seed(42)
 
-# =========================
 # GLOBAL CONFIG
-# =========================
 STEP = 12
 
 NODES_LIST = [
@@ -29,9 +25,7 @@ NODES_LIST = [
     4032, 4034, 4035, 4040, 4043
 ]
 
-# =========================
 # FEATURE ENGINEERING
-# =========================
 def create_dt_features(df):
 
     df = df.copy()
@@ -50,9 +44,7 @@ def create_dt_features(df):
     return df
 
 
-# =========================
 # LOAD DATASET
-# =========================
 def load_dataset():
 
     train = pd.read_csv("data/train.csv")
@@ -62,9 +54,7 @@ def load_dataset():
 
         df = create_dt_features(df)
 
-        # =========================
         # TIME FEATURES
-        # =========================
         if "hour" not in df.columns:
             df["hour"] = 9
 
@@ -77,9 +67,7 @@ def load_dataset():
         if "month" not in df.columns:
             df["month"] = 10
 
-        # =========================
         # LOCATION ONE HOT
-        # =========================
         for n in NODES_LIST:
             df[f"Location_{n}"] = (
                 df["SCATS Number"] == n
@@ -110,9 +98,7 @@ def load_dataset():
     X_train, y_train = extract_features(train)
     X_test, y_test = extract_features(test)
 
-    # =========================
     # SCALE TARGET
-    # =========================
     scaler_y = MinMaxScaler()
 
     y_train = scaler_y.fit_transform(
@@ -123,9 +109,7 @@ def load_dataset():
         y_test.reshape(-1, 1)
     ).flatten()
 
-    # =========================
     # SCALE FEATURES
-    # =========================
     scaler_X = MinMaxScaler()
 
     X_train = scaler_X.fit_transform(X_train)
@@ -137,9 +121,7 @@ def load_dataset():
     return X_train, X_test, y_train, y_test, scaler_y
 
 
-# =========================
 # SEQUENCE BUILDER
-# =========================
 def create_sequence(X, y, step=12):
 
     X_seq = []
@@ -159,9 +141,7 @@ def create_sequence(X, y, step=12):
     return np.array(X_seq), np.array(y_seq)
 
 
-# =========================
 # LSTM MODEL
-# =========================
 def build_lstm(input_shape):
 
     model = Sequential([
@@ -177,9 +157,8 @@ def build_lstm(input_shape):
     return model
 
 
-# =========================
+
 # GRU MODEL
-# =========================
 def build_gru(input_shape):
 
     model = Sequential([
@@ -195,9 +174,7 @@ def build_gru(input_shape):
     return model
 
 
-# =========================
 # DECISION TREE
-# =========================
 def train_dt(X_train, y_train):
 
     dt = DecisionTreeRegressor(
@@ -231,9 +208,9 @@ def train_dt(X_train, y_train):
     return dt
 
 
-# =========================
+
 # EVALUATION
-# =========================
+
 def evaluate_model(y_true, y_pred):
 
     rmse = np.sqrt(
@@ -252,9 +229,9 @@ def evaluate_model(y_true, y_pred):
     return rmse, mae, nrmse
 
 
-# =========================
+
 # DISPLAY RESULTS
-# =========================
+
 def display_predictions(
     model_name,
     actual_scaled,
@@ -294,16 +271,16 @@ def display_predictions(
     return accuracy
 
 
-# =========================
+
 # MAIN
-# =========================
+
 def main():
 
     X_train, X_test, y_train, y_test, scaler = load_dataset()
 
-    # =========================
+    
     # CREATE RNN SEQUENCES
-    # =========================
+    
     X_train_seq, y_train_seq = create_sequence(
         X_train,
         y_train,
@@ -323,9 +300,9 @@ def main():
 
     results = []
 
-    # =========================
+    
     # LSTM
-    # =========================
+    
     print("\nTraining LSTM...")
 
     lstm = build_lstm(input_shape)
@@ -372,9 +349,9 @@ def main():
         lstm_acc
     ])
 
-    # =========================
+    
     # GRU
-    # =========================
+    
     print("\nTraining GRU...")
 
     gru = build_gru(input_shape)
@@ -421,9 +398,9 @@ def main():
         gru_acc
     ])
 
-    # =========================
+    
     # DECISION TREE
-    # =========================
+    
     print("\nTraining DT...")
 
     dt = train_dt(
@@ -453,9 +430,9 @@ def main():
         dt_acc
     ])
 
-    # =========================
+    
     # SAVE RESULTS
-    # =========================
+    
     results_df = pd.DataFrame(
         results,
         columns=[
@@ -481,8 +458,8 @@ def main():
     joblib.dump(scaler, "model/y_scaler.pkl")
 
 
-# =========================
+
 # RUN
-# =========================
+
 if __name__ == "__main__":
     main()
