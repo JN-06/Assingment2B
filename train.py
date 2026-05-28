@@ -310,7 +310,7 @@ def main():
     hist_lstm = lstm.fit(
         X_train_seq,
         y_train_seq,
-        epochs=10,
+        epochs=30,
         batch_size=32,
         verbose=1
     )
@@ -359,7 +359,7 @@ def main():
     hist_gru = gru.fit(
         X_train_seq,
         y_train_seq,
-        epochs=10,
+        epochs=30,
         batch_size=32,
         verbose=1
     )
