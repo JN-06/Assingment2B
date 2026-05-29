@@ -460,7 +460,6 @@ def run_model():
         f"NODE FLOWS:\n"
         f"{chr(10).join(node_flows)}\n\n"
         f"TOTAL FLOW : {total_flow}\n"
-        f"TOTAL COST : {cost:.4f}\n"
         f"NODES VISITED : {len(path)}\n"
         f"EXECUTION TIME : {execution_time*1000:.3f} ms\n"
     )
@@ -602,7 +601,7 @@ def compare_all():
                 actual_total - predicted_total
             )
 
-            results.append((name, cost, len(path),
+            results.append((name, len(path),
                             actual_total, predicted_total, error, path))
 
         except Exception as e:
@@ -618,26 +617,25 @@ def compare_all():
 
     tree = ttk.Treeview(
         win,
-        columns=("Model", "Cost", "Nodes", "Actual", "Predicted", "Error", "Path"),
+        columns=("Model", "Nodes", "Actual", "Predicted", "Error", "Path"),
         show="headings"
     )
 
-    for c in ("Model", "Cost", "Nodes", "Actual", "Predicted", "Error", "Path"):
+    for c in ("Model", "Nodes", "Actual", "Predicted", "Error", "Path"):
         tree.heading(c, text=c)
 
-    best = min(results, key=lambda x: x[1])
+    best = min(results, key=lambda x: x[4])
 
     for r in results:
         tag = ("best",) if r[0] == best[0] else ()
 
         tree.insert("", tk.END, values=(
             r[0],                 # Model
-            f"{r[1]:.4f}",        # Cost
-            r[2],                 # Nodes
-            int(r[3]),            # Actual
-            int(r[4]),            # Predicted
-            int(r[5]),            # Error
-            " -> ".join(map(str,r[6]))
+            r[1],                 # Nodes
+            int(r[2]),            # Actual
+            int(r[3]),            # Predicted
+            int(r[4]),            # Error
+            " -> ".join(map(str,r[5]))
         ))
 
     tree.tag_configure("best", background="lightgreen")

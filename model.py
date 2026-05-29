@@ -208,9 +208,6 @@ def build_dynamic_graph(
             [[predicted_flow]]
         )[0][0]
 
-        # safety cap
-        predicted_flow = max(1, min(predicted_flow, 2000))
-
         # FLOW → SPEED → TIME
         #Convert predicted flow into speed using traffic equation
         speed = flow_to_speed(predicted_flow)
