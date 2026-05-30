@@ -18,9 +18,11 @@ def load_models():
     lstm = load_model("model/lstm.h5", compile=False)
     gru = load_model("model/gru.h5", compile=False)
     dt = joblib.load("model/decision_tree.pkl")
-    y_scaler = joblib.load("model/y_scaler.pkl")
 
-    return lstm, gru, dt, y_scaler
+    y_scaler = joblib.load("model/y_scaler.pkl")
+    scaler_X = joblib.load("model/scaler_X.pkl")
+
+    return lstm, gru, dt, y_scaler, scaler_X
 
 
 # load historical scats traffic flow data, use latest 12 traffic values as prediction input
@@ -127,12 +129,13 @@ def predict_tree(model, data):
     return float(prediction[0])
 
 
-# buid dynamic graph - Build graph with dynamic traffic weights
+# Build graph with ML-predicted travel times
 
 def build_dynamic_graph(
     model,
     model_type,
-    y_scaler=None
+    y_scaler=None,
+    scaler_X=None
 ):
 
     G = build_graph()
@@ -144,6 +147,9 @@ def build_dynamic_graph(
         y_scaler = joblib.load(
             "model/y_scaler.pkl"
         )
+
+    if scaler_X is None:
+        scaler_X = joblib.load("model/scaler_X.pkl")
 
     # fixed date/time features
     hour = 9
@@ -191,9 +197,13 @@ def build_dynamic_graph(
         # PREDICTION
         if model_type == "DT":
 
+            dt_features_scaled = scaler_X.transform(
+                np.array(dt_features).reshape(1, -1)
+            )[0]
+
             predicted_flow = predict_tree(
                 model,
-                dt_features
+                dt_features_scaled
             )
 
         else:
@@ -209,24 +219,25 @@ def build_dynamic_graph(
         )[0][0]
 
         # FLOW → SPEED → TIME
-        #Convert predicted flow into speed using traffic equation
+        # Convert predicted flow into speed using traffic equation.
         speed = flow_to_speed(predicted_flow)
 
         distance = G[u][v]["distance"]
-        # Calculate travel time, hours convert to minutes, add fixed intersection delay, and set as edge weight
+        # Calculate travel time in minutes and add fixed intersection delay.
         travel_time = (distance / speed) * 60
 
         intersection_delay = 0.5  # 30 seconds = 0.5m
 
         travel_time += intersection_delay
 
-        # final weight - Travel time is assigned as the final edge weight for routing algorithm
-        G[u][v]["weight"] = round(travel_time, 4)
+        # Store travel time for display and for the search code.
+        G[u][v]["travel_time"] = round(travel_time, 4)
+        G[u][v]["weight"] = G[u][v]["travel_time"]
 
         print(
             f"{u} -> {v} | "
             f"Flow={predicted_flow:.2f} | "
-            f"Weight={G[u][v]['weight']}"
+            f"Travel Time={G[u][v]['travel_time']:.4f} min"
         )
 
     return G

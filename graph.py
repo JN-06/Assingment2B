@@ -78,6 +78,7 @@ def build_graph():
             u,
             v,
             distance=round(dist, 2),
+            travel_time=0,
             weight=0
         )
 

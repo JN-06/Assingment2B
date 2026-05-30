@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 import joblib
 import random
@@ -444,10 +446,16 @@ def main():
         ]
     )
 
-    results_df.to_csv(
-        "model/results.csv",
-        index=False
-    )
+    import json
+
+    results_dict = {
+        "LSTM": float(lstm_acc),
+        "GRU": float(gru_acc),
+        "DT": float(dt_acc)
+    }
+
+    with open("model/results.json", "w") as f:
+        json.dump(results_dict, f, indent=4)
 
     print("\n==============================")
     print("FINAL RESULTS")

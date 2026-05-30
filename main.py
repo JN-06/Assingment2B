@@ -1,13 +1,26 @@
+import json
+import os
+import time
+import networkx as nx
+
 from graph import build_graph
 from model import load_models, build_dynamic_graph
 from search import ida_star
-import networkx as nx
-import time
 
 
-# =========================
+def calculate_travel_time(G, path):
+    total_time = 0.0
+
+    for u, v in zip(path, path[1:]):
+        edge = G.get_edge_data(u, v, {})
+        total_time += float(
+            edge.get("travel_time", edge.get("weight", 0.0)) or 0.0
+        )
+
+    return total_time
+
+
 # INPUT VALIDATION
-# =========================
 def get_valid_node(prompt, G):
     while True:
         try:
@@ -22,143 +35,80 @@ def get_valid_node(prompt, G):
             print("❌ Please enter a valid number.\n")
 
 
-# =========================
-# COST CALCULATION
-# =========================
-def calculate_cost(G, path):
-    if not path:
-        return None
-
-    cost = 0
-    for i in range(len(path) - 1):
-        cost += G[path[i]][path[i + 1]]["weight"]
-    return cost
-
-
-# =========================
 # RUN SYSTEM
-# =========================
-def run_system(name, model, model_type, start, goal):
-    G = build_dynamic_graph(model, model_type)
+def run_system(name, model, model_type, start, goal, y_scaler, scaler_X):
+    G = build_dynamic_graph(model, model_type, y_scaler, scaler_X)
+
     print(f"\nRunning {name}...")
 
-    # Get coords and pass goal as list
     coords = nx.get_node_attributes(G, "pos")
-    # start timer
+
     start_time = time.time()
 
-    path = ida_star(
-        G,
-        coords,
-        start,
-        [goal]
-    )
+    path = ida_star(G, coords, start, [goal])
 
-    # stop timer
-    end_time = time.time()
-
-    execution_time = end_time - start_time
+    execution_time = time.time() - start_time
 
     if not path:
         print(f"❌ {name}: No path found")
-        return None, None, None, G
-
-    cost = calculate_cost(G, path)
+        return None, execution_time, G
 
     print(f"\n✔ {name}")
     print("Path:", " -> ".join(map(str, path)))
-    print("Cost:", round(cost, 4))
     print("Nodes:", len(path))
-    print(
-        "Execution Time:",
-        f"{execution_time:.6f}",
-        "seconds"
-    )
+    print("Estimated Travel Time:", f"{calculate_travel_time(G, path):.2f}", "minutes")
+    print("Execution Time:", f"{execution_time:.6f}", "seconds")
     print("-" * 40)
 
-    return path, cost, execution_time, G
+    return path, execution_time, G
 
 
-# =========================
 # MAIN PROGRAM
-# =========================
 def main():
     print("\n====================================")
-    print(" A2B TRAFFIC ROUTE SYSTEM")
-    print(" LSTM vs GRU vs Decision Tree (IDA*)")
+    print(" A2B TRAFFIC FLOW PREDICTION")
+    print(" LSTM vs GRU vs Decision Tree accuracy with IDA* travel time")
     print("====================================\n")
 
     print("Loading models...")
-    lstm, gru, dt, y_scalar = load_models()
+    lstm, gru, dt, y_scaler, scaler_X = load_models()
     print("✔ Models loaded")
 
-    # =========================
-    # BUILD BASE GRAPH FOR VALIDATION
-    # =========================
     base_graph = build_graph()
 
-    # =========================
-    # SAFE USER INPUT
-    # =========================
     start = get_valid_node("Enter Origin SCATS ID: ", base_graph)
     goal = get_valid_node("Enter Destination SCATS ID: ", base_graph)
 
-    # =========================
-    # RUN ALL MODELS
-    # =========================
-    lstm_path, lstm_cost, lstm_time, _ = run_system(
-        "LSTM + IDA*", lstm, "LSTM", start, goal
-    )
-
-    gru_path, gru_cost, gru_time, _ = run_system(
-        "GRU + IDA*", gru, "GRU", start, goal
-    )
-
-    dt_path, dt_cost, dt_time, _ = run_system(
-        "DT + IDA*", dt, "DT", start, goal
-    )
+    run_system("LSTM + IDA*", lstm, "LSTM", start, goal, y_scaler, scaler_X)
+    run_system("GRU + IDA*", gru, "GRU", start, goal, y_scaler, scaler_X)
+    run_system("DT + IDA*", dt, "DT", start, goal, y_scaler, scaler_X)
 
     # =========================
-    # FINAL COMPARISON
+    # LOAD TRAIN RESULTS (NO HARDCODING)
     # =========================
+
+    results_file = "model/results.json"
+
+    if not os.path.exists(results_file):
+        print("\n❌ results.json not found. Run train.py first.")
+        return
+
+    with open(results_file, "r") as f:
+        results_dict = json.load(f)
+
+    results = list(results_dict.items())
+
+    best = max(results, key=lambda x: x[1])
+
     print("\n====================================")
     print(" FINAL COMPARISON")
     print("====================================")
 
-    results = [
-        ("LSTM", lstm_cost),
-        ("GRU", gru_cost),
-        ("DT", dt_cost)
-    ]
-
-    results = [r for r in results if r[1] is not None]
-
-    if results:
-        # Sort by cost, then by name for consistent tie-breaking
-        results_sorted = sorted(results, key=lambda x: (x[1], x[0]))
-        best = results_sorted[0]
-    
-        # Check for ties
-        tied = [r for r in results if abs(r[1] - best[1]) < 0.0001]
-    
-        if len(tied) > 1:
-            # Multiple winners
-            winners = ", ".join([r[0] for r in tied])
-            print(f"Best Model:  {winners}")
-            print(f"Lowest Cost:  {best[1]:.2f}")
-            print(f"\nNote: {len(tied)} models tied for best cost!")
-        else:
-            # Single winner
-            print(f"Best Model:  {best[0]}")
-            print(f"Lowest Cost:  {best[1]:.2f}")
-    else:
-        print("\n❌ No valid paths found")
+    print("Best Model:", best[0])
+    print("Accuracy:", f"{best[1]:.2f}%")
 
     print("\n====================================")
 
 
-# =========================
-# RUN
-# =========================
 if __name__ == "__main__":
     main()

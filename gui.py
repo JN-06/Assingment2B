@@ -26,6 +26,7 @@ lstm_model = models[0]
 gru_model  = models[1]
 dt_model   = models[2]
 y_scaler   = models[3]
+scaler_X   = models[4]
 
 base_graph = build_graph()
 
@@ -63,8 +64,12 @@ def safe_graph_fix(G):
 
         base_edge = base_graph.get_edge_data(u, v)
 
-        # preserve ML weight (DO NOT overwrite)
-        G[u][v]["weight"] = float(G[u][v].get("weight", 1.0))
+        # Preserve ML-predicted travel time.
+        travel_time = float(
+            G[u][v].get("travel_time", G[u][v].get("weight", 1.0)) or 1.0
+        )
+        G[u][v]["travel_time"] = travel_time
+        G[u][v]["weight"] = travel_time
 
         # keep distance only
         if base_edge:
@@ -74,16 +79,20 @@ def safe_graph_fix(G):
 
     return G
 
-# =========================
-# COST CALCULATION
-# =========================
-def calculate_cost(G, path):
-    if not path or len(path) < 2:
-        return 0
-    cost = 0
-    for i in range(len(path) - 1):
-        cost += G[path[i]][path[i + 1]].get("weight", 1.0)
-    return cost
+
+def calculate_travel_time(G, path):
+
+    total_time = 0.0
+
+    for u, v in zip(path, path[1:]):
+
+        edge = G.get_edge_data(u, v, {})
+
+        total_time += float(
+            edge.get("travel_time", edge.get("weight", 0.0)) or 0.0
+        )
+
+    return total_time
 
 
 # =========================
@@ -204,7 +213,7 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
         y = (pos[u][1] + pos[v][1]) / 2
 
         distance = data.get("distance", None)
-        weight = data.get("weight", None)
+        travel_time = data.get("travel_time", data.get("weight", None))
 
         box_style = dict(
             facecolor="white",
@@ -231,11 +240,11 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
         # =========================
         # BOTTOM → WEIGHT (ORANGE)
         # =========================
-        if weight is not None:
+        if travel_time is not None:
             ax.text(
                 x,
                 y - 0.04,
-                f"W:{weight:>6.2f}",     # fixed width formatting
+                f"T:{travel_time:>6.2f}", # fixed width formatting
                 fontsize=7,
                 color="#ff9500",
                 ha="center",
@@ -296,7 +305,7 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
         Line2D([0], [0],
             color="#ff0000",
             lw=0,
-            label="Weight (Traffic + distance cost)"),
+            label="Travel Time (Predicted)"),
 
         Line2D([0], [0],
             marker='o',
@@ -343,14 +352,14 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
         if "Distance" in label:
             text.set_color("red")
 
-        elif "Weight" in label:
+        elif "Time" in label:
             text.set_color("orange")
 
     # =========================
     # TITLE
     # =========================
     ax.set_title(
-        f"SCATS Traffic Route System ({current_model_type})",
+        f"SCATS Traffic Flow Prediction ({current_model_type})",
         fontsize=15,
         fontweight="bold"
     )
@@ -410,7 +419,8 @@ def run_model():
     dynamic_graph = build_dynamic_graph(
         model,
         model_type,
-        y_scaler
+        y_scaler,
+        scaler_X
     )
 
     # =========================
@@ -437,7 +447,7 @@ def run_model():
 
     anim_path = path
 
-    cost = calculate_cost(current_graph, path)
+    estimated_travel_time = calculate_travel_time(current_graph, path)
 
     total_flow = 0
     node_flows = []
@@ -460,6 +470,7 @@ def run_model():
         f"NODE FLOWS:\n"
         f"{chr(10).join(node_flows)}\n\n"
         f"TOTAL FLOW : {total_flow}\n"
+        f"EST. TRAVEL TIME : {estimated_travel_time:.2f} min\n"
         f"NODES VISITED : {len(path)}\n"
         f"EXECUTION TIME : {execution_time*1000:.3f} ms\n"
     )
@@ -505,7 +516,11 @@ def predict_flow_for_node(model, model_type, node):
     # DT MODEL
     # =========================
     if model_type == "DT":
+
         x = np.array(dt_features).reshape(1, -1)
+
+        x = scaler_X.transform(x)
+
         return float(model.predict(x)[0])
 
     # =========================
@@ -566,7 +581,7 @@ def compare_all():
     ]:
 
         try:
-            G = build_dynamic_graph(model, mtype)
+            G = build_dynamic_graph(model, mtype, y_scaler, scaler_X)
             G = safe_graph_fix(G)
 
             coords = nx.get_node_attributes(G, "pos")
@@ -575,14 +590,16 @@ def compare_all():
             if not path:
                 continue
 
-            cost = calculate_cost(G, path)
+            estimated_travel_time = calculate_travel_time(G, path)
 
             actual_total = 0
             predicted_total = 0
 
             for node in path:
 
-                actual_total += get_node_flow(node)
+                actual = get_node_flow(node)
+
+                actual_total += actual
 
                 pred = predict_flow_for_node(
                     model,
@@ -595,6 +612,12 @@ def compare_all():
                     [[pred]]
                 )[0][0]
 
+                print(
+                    f"{name} | Node {node} | "
+                    f"Actual={actual} | "
+                    f"Predicted={pred:.2f}"
+                )
+
                 predicted_total += pred
 
             error = abs(
@@ -602,7 +625,8 @@ def compare_all():
             )
 
             results.append((name, len(path),
-                            actual_total, predicted_total, error, path))
+                    actual_total, predicted_total, error,
+                    estimated_travel_time, path))
 
         except Exception as e:
             print(f"{name} failed:", e)
@@ -617,26 +641,27 @@ def compare_all():
 
     tree = ttk.Treeview(
         win,
-        columns=("Model", "Nodes", "Actual", "Predicted", "Error", "Path"),
+        columns=("Model", "Nodes", "Actual", "Predicted", "Error", "Travel Time", "Path"),
         show="headings"
     )
 
-    for c in ("Model", "Nodes", "Actual", "Predicted", "Error", "Path"):
+    for c in ("Model", "Nodes", "Actual", "Predicted", "Error", "Travel Time", "Path"):
         tree.heading(c, text=c)
 
-    best = min(results, key=lambda x: x[4])
+    best = max(results, key=lambda x: x[5])
 
     for r in results:
         tag = ("best",) if r[0] == best[0] else ()
 
         tree.insert("", tk.END, values=(
-            r[0],                 # Model
-            r[1],                 # Nodes
-            int(r[2]),            # Actual
-            int(r[3]),            # Predicted
-            int(r[4]),            # Error
-            " -> ".join(map(str,r[5]))
-        ))
+            r[0],
+            r[1],
+            int(r[2]),
+            int(r[3]),
+            int(r[4]),
+            f"{r[5]:.2f} min",
+            " -> ".join(map(str, r[6]))
+        ), tags=tag)
 
     tree.tag_configure("best", background="lightgreen")
     tree.pack(fill=tk.BOTH, expand=True)
@@ -665,7 +690,7 @@ def reset():
 root = tk.Tk()
 
 root.title(
-    "SCATS Traffic Route Prediction System"
+    "SCATS Traffic Flow Prediction System"
 )
 
 root.geometry("1350x820")
@@ -686,7 +711,7 @@ left.pack(
 
 title = tk.Label(
     left,
-    text="Traffic Route System",
+    text="Traffic Flow Prediction",
     font=("Arial", 16, "bold")
 )
 
