@@ -4,9 +4,7 @@ Data processing for Traffic Regression Tree + Graph Weight System
 
 import pandas as pd
 
-# =========================
 # Selected SCATS + ONE location each
-# =========================
 SELECTED_LOCATIONS = {
     3120: "BURKE_RD N of CANTERBURY_RD",
     3122: "CANTERBURY_RD E of STANHOPE_GV",
@@ -20,10 +18,7 @@ SELECTED_LOCATIONS = {
     4043: "BURKE_RD N of TOORAK_RD"
 }
 
-
-# =========================
 # Load Excel file
-# =========================
 def load_raw_excel(file):
 
     df = pd.read_excel(
@@ -38,10 +33,7 @@ def load_raw_excel(file):
 
     return df
 
-
-# =========================
 # Clean dataset
-# =========================
 def clean_data(df):
     df = df.copy()
 
@@ -50,16 +42,11 @@ def clean_data(df):
 
     return df
 
-
-# =========================
 # Feature engineering + flow extraction
-# =========================
 def extract_flow(df):
     df = df.copy()
 
-    # =========================
-    # STEP 1: Filter SCATS + exact location 
-    # =========================
+    # STEP 1: Filter SCATS + exact location
     df = df[
         df.apply(
             lambda row: (
@@ -70,9 +57,7 @@ def extract_flow(df):
         )
     ]
 
-    # =========================
     # STEP 2: Convert date features
-    # =========================
     df["Date"] = pd.to_datetime(df["Date"])
 
     df["day"] = df["Date"].dt.day
@@ -80,14 +65,10 @@ def extract_flow(df):
     df["year"] = df["Date"].dt.year
     df["day_of_week"] = df["Date"].dt.dayofweek  # Monday=0
 
-    # =========================
     # STEP 3: Target variable (traffic flow)
-    # =========================
     df["flow_9to10"] = df[["V36", "V37", "V38", "V39"]].sum(axis=1)
 
-    # =========================
     # STEP 4: Final dataset for ML
-    # =========================
     df = df[[
         "SCATS Number",
         "Location",
@@ -100,10 +81,7 @@ def extract_flow(df):
 
     return df
 
-
-# =========================
 # Full pipeline loader
-# =========================
 def load_data(file="Scats Data October 2006.xls"):
     df = load_raw_excel(file)
     df = clean_data(df)
@@ -111,10 +89,7 @@ def load_data(file="Scats Data October 2006.xls"):
     df = df.dropna(subset=["flow_9to10"])
     return df
 
-
-# =========================
 # Train / Test split
-# =========================
 def create_train_test(df, ratio=0.8):
     df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
@@ -130,10 +105,7 @@ def create_train_test(df, ratio=0.8):
 
     return train, test
 
-
-# =========================
 # Run pipeline
-# =========================
 if __name__ == "__main__":
     df = load_data("Scats Data October 2006.xls")
     create_train_test(df)

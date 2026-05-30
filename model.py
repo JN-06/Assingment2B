@@ -5,15 +5,14 @@ from tensorflow.keras.models import load_model
 from graph import build_graph
 import math
 
-# NODES LIST
+# Nodes list
 NODES_LIST = [
     3120, 3122, 3126, 3180, 4030,
     4032, 4034, 4035, 4040, 4043
 ]
-
 STEP = 12
 
-# LOAD MODELS
+# Load models
 def load_models():
     lstm = load_model("model/lstm.h5", compile=False)
     gru = load_model("model/gru.h5", compile=False)
@@ -23,7 +22,6 @@ def load_models():
     scaler_X = joblib.load("model/scaler_X.pkl")
 
     return lstm, gru, dt, y_scaler, scaler_X
-
 
 # load historical scats traffic flow data, use latest 12 traffic values as prediction input
 def load_traffic_histories():
@@ -48,8 +46,7 @@ def load_traffic_histories():
 
     return traffic_data
 
-
-# FLOW → SPEED CONVERSION
+# Flow → Speed Conversion
 # Convert predicted traffic flow into vehicle speed
 # Higher traffic flow = lower speed due to congestion
 def flow_to_speed(flow):
@@ -77,8 +74,7 @@ def flow_to_speed(flow):
 
     return speed
 
-
-# PREDICTION HELPERS
+# Prediction Helpers
 # LSTM and GRU use sequential historical traffic data 
 def predict_rnn(model, data):
 
@@ -128,9 +124,7 @@ def predict_tree(model, data):
 
     return float(prediction[0]) # returns scaled traffic flow (0-1), NOT real cars
 
-
 # Build graph with ML-predicted travel times
-
 def build_dynamic_graph(
     model,
     model_type,
@@ -172,7 +166,7 @@ def build_dynamic_graph(
             for n in NODES_LIST
         ]
 
-        # DT FEATURES
+        # DT Features
         # Create engineered features: previous flow, average flow, std deviation, time, location
         flow_t1 = history[-1]
         flow_t2 = history[-2]
@@ -191,10 +185,10 @@ def build_dynamic_graph(
             flow_std_3
         ] + loc_onehot
 
-        # RNN FEATURES - Combine traffic history + engineered features for LSTM/GRU
+        # RNN Features - Combine traffic history + engineered features for LSTM/GRU
         rnn_features = history + dt_features
 
-        # PREDICTION
+        # Prediction
         if model_type == "DT":
 
             dt_features_scaled = scaler_X.transform(
@@ -218,7 +212,7 @@ def build_dynamic_graph(
             [[predicted_flow]]
         )[0][0]
 
-        # FLOW → SPEED → TIME
+        # Flow → Speed → Time
         # Convert predicted flow into speed using traffic equation.
         speed = flow_to_speed(predicted_flow)
 
