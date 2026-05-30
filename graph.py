@@ -1,15 +1,14 @@
 import networkx as nx
 import math
 
-
-# NODES
+# Nodes
 NODES = [
     3120, 3122, 3126, 3180,
     4030, 4032, 4034, 4035,
     4040, 4043
 ]
 
-# EDGES (TRAFFIC LINKS)
+# Edges
 EDGES = [
     (3120, 3122),
     (3120, 4030),
@@ -26,7 +25,6 @@ EDGES = [
     (3180, 4040),
     (3180, 4030),
     (3180, 4035),
-
     # Reverse paths
     (4043, 4032),
     (4043, 4034),
@@ -45,10 +43,9 @@ EDGES = [
     (3180, 3120),
 ]
 
-# BUILD GRAPH
+# Build graph
 def build_graph():
     G = nx.DiGraph()
-
     positions = {
         3120: (0, 2),
         3122: (1, 2),
@@ -62,18 +59,15 @@ def build_graph():
         4043: (3, 1)
     }
 
-    # ADD NODES
+    # add node
     for node in NODES:
         G.add_node(node, pos=positions[node])
 
     # ADD EDGES (FIXED)
     for u, v in EDGES:
-
         x1, y1 = positions[u]
         x2, y2 = positions[v]
-
         dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-
         G.add_edge(
             u,
             v,
@@ -81,16 +75,13 @@ def build_graph():
             travel_time=0,
             weight=0
         )
-
     return G
 
-# TEST
+# Test
 if __name__ == "__main__":
     G = build_graph()
-
     print("Nodes:")
     print(G.nodes())
-
     print("\nEdges:")
     for edge in G.edges(data=True):
         print(edge)

@@ -2,51 +2,39 @@ import json
 import os
 import time
 import networkx as nx
-
 from graph import build_graph
 from model import load_models, build_dynamic_graph
 from search import ida_star
 
-
+# Total travel time
 def calculate_travel_time(G, path):
     total_time = 0.0
-
     for u, v in zip(path, path[1:]):
         edge = G.get_edge_data(u, v, {})
         total_time += float(
             edge.get("travel_time", edge.get("weight", 0.0)) or 0.0
         )
-
     return total_time
 
-
-# INPUT VALIDATION
+# Input validation
 def get_valid_node(prompt, G):
     while True:
         try:
             node = int(input(prompt))
-
             if node in G.nodes():
                 return node
             else:
                 print("❌ Invalid SCATS ID. Please try again.\n")
-
         except ValueError:
             print("❌ Please enter a valid number.\n")
 
-
-# RUN SYSTEM
+# Run system
 def run_system(name, model, model_type, start, goal, y_scaler, scaler_X):
     G = build_dynamic_graph(model, model_type, y_scaler, scaler_X)
-
     print(f"\nRunning {name}...")
-
     coords = nx.get_node_attributes(G, "pos")
-
     start_time = time.time()
-
     path = ida_star(G, coords, start, [goal])
-
     execution_time = time.time() - start_time
 
     if not path:
@@ -63,7 +51,7 @@ def run_system(name, model, model_type, start, goal, y_scaler, scaler_X):
     return path, execution_time, G
 
 
-# MAIN PROGRAM
+# Main program
 def main():
     print("\n====================================")
     print(" A2B TRAFFIC FLOW PREDICTION")
@@ -75,7 +63,6 @@ def main():
     print("✔ Models loaded")
 
     base_graph = build_graph()
-
     start = get_valid_node("Enter Origin SCATS ID: ", base_graph)
     goal = get_valid_node("Enter Destination SCATS ID: ", base_graph)
 
@@ -83,32 +70,23 @@ def main():
     run_system("GRU + IDA*", gru, "GRU", start, goal, y_scaler, scaler_X)
     run_system("DT + IDA*", dt, "DT", start, goal, y_scaler, scaler_X)
 
-    # =========================
-    # LOAD TRAIN RESULTS (NO HARDCODING)
-    # =========================
-
+    # load train result
     results_file = "model/results.json"
 
     if not os.path.exists(results_file):
         print("\n❌ results.json not found. Run train.py first.")
         return
-
     with open(results_file, "r") as f:
         results_dict = json.load(f)
-
     results = list(results_dict.items())
-
     best = max(results, key=lambda x: x[1])
 
     print("\n====================================")
     print(" FINAL COMPARISON")
     print("====================================")
-
     print("Best Model:", best[0])
     print("Accuracy:", f"{best[1]:.2f}%")
-
     print("\n====================================")
-
 
 if __name__ == "__main__":
     main()
