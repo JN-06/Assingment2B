@@ -601,24 +601,18 @@ def compare_all():
 
                 actual_total += actual
 
-                pred = predict_flow_for_node(
-                    model,
-                    mtype,
-                    node
-                )
-
                 # convert scaled value back to real traffic flow
-                pred = y_scaler.inverse_transform(
-                    [[pred]]
-                )[0][0]
+                pred_raw = predict_flow_for_node(model, mtype, node)
+
+                pred_final = y_scaler.inverse_transform([[pred_raw]])[0][0]
 
                 print(
                     f"{name} | Node {node} | "
                     f"Actual={actual} | "
-                    f"Predicted={pred:.2f}"
+                    f"Predicted={pred_final:.2f}"
                 )
 
-                predicted_total += pred
+                predicted_total += pred_final
 
             error = abs(
                 actual_total - predicted_total

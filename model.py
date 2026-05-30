@@ -126,7 +126,7 @@ def predict_tree(model, data):
 
     prediction = model.predict(data)
 
-    return float(prediction[0])
+    return float(prediction[0]) # returns scaled traffic flow (0-1), NOT real cars
 
 
 # Build graph with ML-predicted travel times
