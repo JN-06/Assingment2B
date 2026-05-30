@@ -6,7 +6,5 @@ Run
 pip install numpy pandas scikit-learn tensorflow networkx matplotlib joblib
 
 python train.py
-
 python main.py
-
-python graph.py
+python gui.py
