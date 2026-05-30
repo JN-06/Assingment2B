@@ -63,7 +63,7 @@ def build_graph():
     for node in NODES:
         G.add_node(node, pos=positions[node])
 
-    # ADD EDGES (FIXED)
+    # ADD EDGES
     for u, v in EDGES:
         x1, y1 = positions[u]
         x2, y2 = positions[v]

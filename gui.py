@@ -46,7 +46,7 @@ def safe_graph_fix(G):
     for u, v in G.edges():
         base_edge = base_graph.get_edge_data(u, v)
 
-        # Preserve ML-predicted travel time.
+        # Preserve ML-predicted travel time
         travel_time = float(
             G[u][v].get("travel_time", G[u][v].get("weight", 1.0)) or 1.0
         )
@@ -161,12 +161,12 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
             ax.text(
                 x,
                 y + 0.04,
-                f"D:{distance:>6.2f}",   # fixed width formatting
+                f"D:{distance:>6.2f}", 
                 fontsize=7,
                 color="#ff0000",
                 ha="center",
                 va="center",
-                family="monospace",      # IMPORTANT FIX
+                family="monospace", 
                 bbox=box_style
             )
         # weight
@@ -174,12 +174,12 @@ def draw_graph(G, path=None, highlight_index=-1, start_node=None, goal_node=None
             ax.text(
                 x,
                 y - 0.04,
-                f"T:{travel_time:>6.2f}", # fixed width formatting
+                f"T:{travel_time:>6.2f}", 
                 fontsize=7,
                 color="#ff9500",
                 ha="center",
                 va="center",
-                family="monospace",      # IMPORTANT FIX
+                family="monospace", 
                 bbox=box_style
             )
     # path highlight

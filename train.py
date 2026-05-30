@@ -40,7 +40,7 @@ def create_dt_features(df):
     df["flow_mean_3"] = df["flow_9to10"].rolling(3).mean()
     df["flow_std_3"] = df["flow_9to10"].rolling(3).std()
 
-    # remove NaN
+    # fill missing values created by lag and rolling features
     df = df.bfill()
 
     return df
