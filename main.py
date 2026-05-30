@@ -24,9 +24,9 @@ def get_valid_node(prompt, G):
             if node in G.nodes():
                 return node
             else:
-                print("❌ Invalid SCATS ID. Please try again.\n")
+                print("Invalid SCATS ID. Please try again.\n")
         except ValueError:
-            print("❌ Please enter a valid number.\n")
+            print("Please enter a valid number.\n")
 
 # Run system
 def run_system(name, model, model_type, start, goal, y_scaler, scaler_X):
@@ -38,7 +38,7 @@ def run_system(name, model, model_type, start, goal, y_scaler, scaler_X):
     execution_time = time.time() - start_time
 
     if not path:
-        print(f"❌ {name}: No path found")
+        print(f"{name}: No path found")
         return None, execution_time, G
 
     print(f"\n✔ {name}")
@@ -74,7 +74,7 @@ def main():
     results_file = "model/results.json"
 
     if not os.path.exists(results_file):
-        print("\n❌ results.json not found. Run train.py first.")
+        print("\nresults.json not found. Run train.py first.")
         return
     with open(results_file, "r") as f:
         results_dict = json.load(f)
